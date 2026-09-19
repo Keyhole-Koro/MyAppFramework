@@ -1,97 +1,51 @@
 package annotations;
 
-// The annotations an application is written with, and what they expand to.
+// The annotations an application is written with -- declarations only.
 //
-//     import { app, timer, key, open, on_close } from ".../annotations.mln";
+//     import { app, timer, key } from ".../annotations.mln";
 //
-//     @app struct Counter { i32 clicks = 0; i32 label; };
-//     i32 (Counter *c) view() { return <Window ...>...</Window>; }
-//     @timer(100) void (Counter *c) poll() { ... }
+//     @app(single, name = "Editor")
+//     i32 (Editor *e) view() { return <Window ...>...</Window>; }
 //
-// The compiler knows nothing about apps. It checks each use against the
-// declaration below (target, arguments, `requires`) and expands @app's
-// template into ordinary MyLang declarations that app.mln reads at boot. The
-// template's `@` directives are the compiler's reflection surface -- @T,
-// @name(T), @arg(p), @each over @fields / @methods, @tramp(m), @i -- and
-// nothing else: templates read the declaration, they do not compute.
+//     @key("Ctrl+S")
+//     void (Editor *e) save(i32 id) { ... }
 //
-// Everything the framework relies on is therefore in this file and app.mln:
-// the descriptor table an @app struct becomes, in i32 words:
+// Like a Java @interface, each prototype fixes a name and the shape of its
+// arguments; nothing ever calls it. The compiler checks every `@name(args)`
+// against the prototype and records a row -- name, the annotated function,
+// its receiver type's name and size, the arguments -- in the module's
+// metadata table. app.mln reads those rows at boot (through meta.mln) and
+// decides what they mean, when, and in what order.
 //
-//   [0] name (char*)        [1] flags (1 = single instance)   [2] sizeof(T)
-//   [3] init  void(self)    [4] view  i32(self) -> window id
-//   [5] open  handler|0     [6] on_close handler|0            [7] task handler|0
-//   [8] timer count N       [9] key count M
-//   [10 ..] N x (interval, handler), then M x (key spec char*, handler)
+// The first three parameters are always what the row carries about the
+// annotated function; the rest are the annotation's own arguments, literal
+// only, with defaults for the ones a use may leave out.
 //
-// where every handler is `void (i32 owner, i32 id, i32 arg)` -- the shape
-// @tramp(m) produces from a method `(T *self) m()`, `m(i32 id)` or
-// `m(i32 id, i32 arg)`. `owner` is the instance app.mln allocated. Key specs
-// ("Ctrl+S") are kept as text and parsed by app.mln when the app is mounted.
+// A registered method is called with the instance pointer first --
+// view(self), poll(self), save(self, id), open(self, path) -- and the DOM's
+// uniform `handler(owner, id, arg)` reaches it the same way, since the
+// calling convention ignores trailing arguments. Methods must therefore
+// take a pointer receiver, which the compiler checks.
 
-// An application: a struct the framework can allocate, mount and route
-// events to. `single`: launching it again focuses the running instance.
-// `name`: the launcher label, defaulting to the struct's name.
-export annotation app(bool single = false, char *name = "")
-    on struct T
-    requires method view
-{
-    // Field initializers, applied to the zeroed instance before view().
-    void __app_@{T}_init(i32 self) {
-        @T *p = (@T*)self;
-        @each(f in @fields(T) where init) { p->@f = @f.init; }
-    }
+// On a type's view method: the type is an application. The framework
+// allocates `size` bytes per instance (zeroed), calls view(self) to build
+// the window and routes the window's events to the instance.
+// `single`: launching it again focuses the running instance instead.
+// `name`: the launcher label (default: the type's name).
+export void app(i32 view, char *type, i32 size, bool single = false, char *name = "");
 
-    i32 __app_@{T}_view(i32 self) { @T *p = (@T*)self; return p->view(); }
+// fn(self) every `ms` milliseconds while an instance is mounted.
+export void timer(i32 fn, char *type, i32 size, i32 ms);
 
-    // @open gets the path in `arg`, unlike the generic (id, arg) shape.
-    @each(m in @methods(T, open)) {
-        void __app_@{T}_open_tramp(i32 owner, i32 id, i32 arg) { @T *p = (@T*)owner; p->@m((char*)arg); }
-    }
+// fn(self, id, code | mods << 16) when the key is pressed while the type's
+// window is active. "Ctrl", "Shift", "Alt" and a key: a character, "Enter",
+// "Esc", "Tab", "Space", "Left"..., "F1".."F12".
+export void key(i32 fn, char *type, i32 size, char *combo);
 
-    i32 __app_@{T}_table[64];
+// fn(self, path) when another app calls ui.open(path). A single-instance
+// app's running instance receives it; otherwise a new one is started.
+export void open(i32 fn, char *type, i32 size);
 
-    export i32* __app_@{T}_desc() {
-        i32 *t = &__app_@{T}_table[0];
-        @T probe;
-        t[0] = (i32)@arg(name);
-        char *label = (char*)t[0];
-        if (label[0] == 0) { t[0] = (i32)@name(T); }
-        t[1] = @arg(single);
-        t[2] = sizeof(probe);
-        t[3] = __app_@{T}_init;
-        t[4] = __app_@{T}_view;
-        t[5] = 0;
-        @each(m in @methods(T, open)) { t[5] = __app_@{T}_open_tramp; }
-        t[6] = 0;
-        @each(m in @methods(T, on_close)) { t[6] = @tramp(m); }
-        t[7] = 0;
-        @each(m in @methods(T, task)) { t[7] = @tramp(m); }
-        t[8] = @count(@methods(T, timer));
-        t[9] = @count(@methods(T, key));
-        i32 w = 10;
-        @each(m in @methods(T, timer)) { t[w] = @m.args[0]; t[w + 1] = @tramp(m); w = w + 2; }
-        @each(m in @methods(T, key)) { t[w] = (i32)@m.args[0]; t[w + 1] = @tramp(m); w = w + 2; }
-        return t;
-    }
-}
-
-// Called every `ms` milliseconds while an instance is mounted; one timer
-// per instance. `()` or `(i32 id)`.
-export annotation timer(i32 ms) on method of app;
-
-// A window-level shortcut, active while the app's window is: "Ctrl+S",
-// "Shift+Enter", "F5", "Enter" (modifiers Ctrl, Shift, Alt). `()`, `(i32 id)`
-// or `(i32 id, i32 arg)` with arg = code | mods << 16.
-export annotation key(char *combo) on method of app;
-
-// Receives a path handed over by ui.open(); for a `single` app the running
-// instance gets it. Exactly `(char *path)`.
-export annotation open on method of app;
-
-// The user closed the window. Runs before the framework frees the instance
-// and everything it owns. `()` or `(i32 id)`.
-export annotation on_close on method of app;
-
-// Reserved: a scheduler task per instance. Not started by app.mln yet.
-export annotation task on method of app;
+// fn(self) when the user closes the window, before the framework frees
+// the instance and everything it created.
+export void on_close(i32 fn, char *type, i32 size);

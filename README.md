@@ -6,7 +6,8 @@ in MyLang. Lives at `system/MyAppFramework` in
 
 | file | what it is |
 | --- | --- |
-| `src/annotations.mln` | `@app`, `@timer`, `@key`, `@open`, `@on_close`, `@task` -- declared as MyLang `annotation`s; `@app`'s template is what a struct expands into |
+| `src/annotations.mln` | `@app`, `@timer`, `@key`, `@open`, `@on_close` -- declared as prototypes `(i32 fn, char *type, i32 size, ...)`, like a Java `@interface`; the compiler records each use as a metadata row |
+| `src/meta.mln` | reads the compiler's metadata rows back: `count()`, `name(i)`, `fn(i)`, `type(i)`, `size(i)`, `arg(i, k)` |
 | `src/app.mln` | registry of installed apps, instances, launch / single-instance / `ui.open()` routing, timers, shortcuts, window close and owner sweep |
 | `src/ui.mln` | the UI API an app talks to: i32 and `char*` only, so it can become a syscall surface |
 | `docs/APP_FRAMEWORK.md` | how to write an app, and how the framework runs it |
@@ -18,9 +19,9 @@ import dom_elements from "../ui/dom/dom_elements.mln";
 import ui from "../../../MyAppFramework/src/ui.mln";
 import { app, timer } from "../../../MyAppFramework/src/annotations.mln";
 
-@app
-struct Counter { i32 clicks = 0; i32 label; };
+struct Counter { i32 clicks; i32 label; };
 
+@app
 i32 (Counter *c) view() {
     return <Window title="Counter" w={400} h={272}>
         <Label ref={c->label} text="clicks: 0" bold={1} />
@@ -34,10 +35,11 @@ void (Counter *c) click(i32 id) {
 }
 ```
 
-The compiler knows nothing about apps: it checks each `@name` against its
-`annotation` declaration and expands the template
-(`toolchain/MyLangCompiler/docs/grammar.md`, "Attributes and annotations").
-The build (`qa/runners/gen_app_manifest.py`) lists every `@app` struct under
-`system/MyOS/src/apps` and boot calls `app.install()`.
+The compiler knows nothing about apps: `@app` on `view` becomes the row
+`["app", Counter__view, "Counter", sizeof(Counter), ...]` in the module's
+metadata table (`toolchain/MyLangCompiler/docs/grammar.md`, "Attributes and
+annotations"). At boot `app.install()` reads every row through `meta.mln`
+and decides what it means -- the lifecycle is the framework's. MyOS's
+`boot/main.mln` imports the apps and collects the tables.
 
 Tests: `make framework-test` in MyComputer.

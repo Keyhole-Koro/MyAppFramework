@@ -1,10 +1,11 @@
 # MyAppFramework — MyOS アプリケーションフレームワーク
 
-`src/annotations.mln`（`@app` 等の定義と展開テンプレート）、`src/app.mln`
-（レジストリ・起動・イベント配送）、`src/ui.mln`（アプリが呼べる UI API）で成り立つ、
-デスクトップアプリの書き方とその裏側。コンパイラは `annotation` の**機構**だけを
-持ち（`toolchain/MyLangCompiler/docs/grammar.md` "Attributes and annotations"）、
-`@app` の**意味**は全部このリポジトリにある。
+`src/annotations.mln`（`@app` 等の**宣言**）、`src/meta.mln`（コンパイラが残した
+メタデータ表の読み手）、`src/app.mln`（レジストリ・起動・イベント配送）、`src/ui.mln`
+（アプリが呼べる UI API）で成り立つ、デスクトップアプリの書き方とその裏側。
+コンパイラは「`@a(x)` を宣言と照合して、モジュールの表に 1 行記録する」ことしか知らない
+（`toolchain/MyLangCompiler/docs/grammar.md` "Attributes and annotations"）。`@app` の
+**意味**と、いつ処理するか（ライフサイクル）は全部このリポジトリにある。
 
 ## アプリの書き方
 
@@ -15,14 +16,15 @@ import dom_elements from "../ui/dom/dom_elements.mln";                  // marku
 import ui from "../../../MyAppFramework/src/ui.mln";                    // アプリが呼べる UI API
 import { app } from "../../../MyAppFramework/src/annotations.mln";      // 使うアノテーション
 
-@app
 struct Counter {
-    i32 clicks = 0;      // インスタンスの状態。フィールド初期化子は literal のみ
-    i32 step = 1;
+    i32 clicks;          // インスタンスの状態。mount 時にゼロ埋めされる
+    i32 step;
     i32 label;           // ref= で受け取るノード id
 };
 
-i32 (Counter *c) view() {                                // 必須: ウィンドウを返す
+@app                                                     // view に付ける = この型はアプリ
+i32 (Counter *c) view() {
+    c->step = 1;                                         // 0 以外の初期値はここで
     return <Window title="Counter" x={96} y={72} w={400} h={272}>
         <Label ref={c->label} text="clicks: 0" bold={1} testId="counter" />
         <PrimaryButton text="Click me" w={120} h={36} onClick={c->click} />
@@ -35,15 +37,17 @@ void (Counter *c) click(i32 id) {
 }
 ```
 
-- **アノテーションは import する。** `@app` / `@timer` / `@key` / `@open` / `@on_close` は
-  `annotations.mln` に `annotation` として宣言されていて、import していない名前は
-  コンパイルエラー。
-- **ファイルを `MyOS/src/apps/` に置くだけで登録される。** ビルド
-  （`qa/runners/gen_app_manifest.py`）が `@app` を拾って
-  `build/apps_manifest.mln` を生成し、`boot/main.mln` がそれを 1 回呼ぶ。
-  アプリは framework を import しないし、framework もアプリを知らない。
-- **レシーバはポインタ** (`Counter *c`)。ディスパッチャはインスタンスを i32 で
-  持っているので、`ref mut` レシーバでは受け取れない（コンパイルエラーになる）。
+- **アノテーションは import する宣言。** `@app` / `@timer` / `@key` / `@open` /
+  `@on_close` は `annotations.mln` のプロトタイプ `export void app(i32 view, char *type, i32 size, ...);`
+  等（Java の `@interface` 相当。呼ばれない）。コンパイラは使用箇所を宣言と照合して
+  メタデータ表に記録し、`app.install()` が起動時に表を読んで意味を与える。
+  import していない名前・引数の形が違う使い方はコンパイルエラー。
+- **アプリは `boot/main.mln` が import する。** import されたモジュールがプログラムに
+  入り、そのメタデータ表が集まる（main.mln の `extern i32* __annotations_table(i32 m);`）。
+  framework はアプリを知らない。将来はアプリを MFS 上の .mbin にしてローダが表を読む
+  形にする予定（main.mln の TODO）。
+- **レシーバはポインタか参照** (`Counter *c` / `ref mut Counter c`)。framework はインスタンスの
+  アドレスを第一引数に渡すので、値レシーバ（move）は使えない（コンパイルエラー）。
 - **`ref={c->label}`** はそのノードの id をフィールドに書く。木を歩いて id を
   取り直すコードは要らない。
 - **省略できるプロパティ**: `x`/`y`（親原点）、`w`/`h`、`color`、`bold`、
@@ -56,12 +60,11 @@ void (Counter *c) click(i32 id) {
 
 | 属性 | 意味 | 形 |
 | --- | --- | --- |
-| `@app` / `@app(single)` / `@app(name = "...")` | アプリ宣言。`single` は 2 回目の起動で既存ウィンドウを前面に | struct |
+| `@app` / `@app(single)` / `@app(name = "...")` | この view を持つ型をアプリに。`single` は 2 回目の起動で既存ウィンドウを前面に | `i32 (T *self) view()` |
 | `@open` | 他アプリの `ui.open(path)` を受ける。`single` なら既存インスタンスへ | `(char *path)` |
 | `@on_close` | ユーザーがウィンドウを閉じた。後始末のあと framework がインスタンスを解放 | `()` / `(i32 id)` |
 | `@timer(ms)` | mount 中、周期的に呼ばれる。インスタンスごとに 1 本 | `()` / `(i32 id)` |
 | `@key("Ctrl+S")` | そのウィンドウがアクティブな間のショートカット | `()` / `(i32 id)` / `(id, arg)` |
-| `@task` | 予約（scheduler がタスク引数を取れるようになったら） | `()` |
 
 `src/apps/editor.dom.mln`（`single` + `@open` + `@key`）、`terminal.dom.mln`
 （`@timer` + `@key("Enter")` + `@on_close`）、`files.dom.mln`（ダイアログ）が実例。
@@ -83,26 +86,24 @@ void (Counter *c) click(i32 id) {
 
 ## 裏側
 
-### `@app` はテンプレート
+### `@app` はメタデータ
 
-`annotations.mln` の `annotation app(...) on struct T requires method view { ... }` の
-本体は MyLang ソースで、`@T` / `@{T}` / `@arg(name)` / `@each(f in @fields(T) where init)` /
-`@each(m in @methods(T, timer))` / `@m.args[0]` / `@tramp(m)` / `@count(...)` を
-コンパイラが埋めて、通常のトップレベル宣言として再パースする。マーカー
-（`annotation timer(i32 ms) on method of app;`）は検査だけされ、`@methods(T, timer)`
-から読まれる。展開結果を見たいときは `mlc --dump-ast`。
+```mylang
+// annotations.mln — 宣言だけ
+export void app(i32 view, char *type, i32 size, bool single = false, char *name = "");
+export void timer(i32 fn, char *type, i32 size, i32 ms);
+```
 
-```
-App (src/apps/*.mln, @app)
- ↕ ui.mln — id + scalar。イベントはキュー経由
-UI server: dom.mln / dom_elements / dom_widgets / dom_render / dom_automation
- ↕ damage rect（Surface 1 枚 = 画面全体）
-compositor.mln: 入力 → hit-test → キュー、paint / present
-```
+`@timer(100)` を `Terminal` の `poll` に付けると、コンパイラは terminal.dom.mln の表
+`terminal___annotations()` に 1 行 `["timer", Terminal__poll, "Terminal", sizeof(Terminal), 1, 100, 0, 0]`
+を記録する。`app.install()` が `meta.mln` 経由で全行を読み、`"app"` / `"timer"` / … を
+型名キーのレジストリ（`register_*`）に振り分ける。順序・検証・いつ読むかは `app.mln` が
+決める。他の framework が自分のアノテーションを同じ表に混ぜても、知らない名前は読み飛ばす。
 
 - **ハンドラ ABI は 1 種類**: `void handler(i32 owner, i32 id, i32 arg)`。
-  `owner` はインスタンスのポインタ。コンパイラが `onClick={c->click}` や属性付き
-  メソッドからこの形のトランポリン (`Counter__click__tramp`) を生成する。
+  `owner` はインスタンスのポインタ。呼び出し規約が余分な引数を無視するので、
+  `onClick={c->click}` も `@timer` のメソッドも**メソッドの実体**をそのまま渡す
+  （`(Counter *c, i32 id)` に `owner` と `id` が届く）。トランポリンは無い。
   `dom.set_on_click` 等を直接呼ぶ低レベルコードだけがこの ABI を手書きする。
 - **イベントキュー** (`dom.push_event` / `dom.drain_events`): クリック・変更・
   タイマは検出した場所で呼ばず、コンポジタが入力処理の後にまとめて実行する
@@ -113,14 +114,15 @@ compositor.mln: 入力 → hit-test → キュー、paint / present
   `view()` とハンドラの実行中それをインスタンスに設定するので、アプリが途中で
   作ったダイアログやタイマも同じ owner になり、ウィンドウを閉じると
   `dom.remove_owned(owner)` で一括回収される。
-- **ディスクリプタ**: `__app_Counter_desc()` が返す i32 の表
-  （名前, flags, size, init, view, open, on_close, task, timer 数, key 数,
-  (interval, fn)…, ("Ctrl+S", fn)…）。生成するのは `annotations.mln` の
-  `@app` テンプレート、読むのは `app.mln`。レイアウトを変えるならこの 2 ファイルだけ。
-  `"Ctrl+S"` の解釈は `app.mln` が起動後に行う（`key_spec_matches`）。
-- **manifest** が唯一「アプリと framework の両方を知る」場所。コンパイルは
-  `main.mln` からの import 追跡で決まり、リンカにセクションが無いので、宣言だけで
-  表に載る仕掛けは作れない。生成ファイルで代替している。
+- **レジストリ** (`app.mln`): 型名ごとに size / view / single / name / open / on_close /
+  timer 表 / key 表。`"Ctrl+S"` の解釈は `key_spec_matches`。
+- **メタデータ表** (`meta.mln`): 1 行 8 ワード（名前・関数・型名・サイズ・引数数・引数×3）。
+  レイアウトは `grammar.md` "Attributes and annotations"。
+- **表の集約**は `main.mln`（アプリを import している唯一の場所）の
+  `extern i32* __annotations_table(i32 m);` 宣言をコンパイラが定義に置き換えることで行う。
+  コンパイルは `main.mln` からの import 追跡で決まり、リンカにセクションが無いので、
+  「宣言だけで表に載る」仕掛けは無い。アプリを fs 上の .mbin にする段階でここは
+  ローダに移る。
 
 ## 検証
 
@@ -139,6 +141,11 @@ python3 system/MyOS/tests/apps_e2e_test.py        # プロセス / エディタ 
   バッファはモジュール変数か heap に置く（`files.dom.mln` 参照）。
 - `Result<Option<i32>, E>` を値の case で受ける (`Ok(v) -> v`) と struct が
   コピーされない。文レベルの 2 段 case で読む（`files.dom.mln` の `refresh`）。
-- `@task` は framework 側が未実装（`scheduler.spawn_task` がタスク引数を取らない）。
+- `@task` は無くした（`scheduler.spawn_task` がタスク引数を取れるようになったら関数を 1 つ足すだけ）。
+- struct のフィールド初期化子 (`i32 step = 1;`) は効かない（生成コードが無い）。view() で入れる。
+- グローバルの**ポインタ配列** (`char *g[16]`) は誤コンパイルされる（コンパイラの既知バグ）。
+  `app.mln` は `i32` 配列 + キャストで持っている。
+- リンカは同名シンボルの重複を検出しない。`extern i32* __annotations_table(i32 m);` を
+  アプリに到達できる 2 つのモジュールが宣言すると、片方が黙って選ばれる。
 - リポジトリ間の依存は MyOS/src/apps → MyAppFramework → MyOS/src/ui（UI server）と
   循環している。UI server を切り出せば解ける（`docs/learn/annotations-and-metaprogramming.md`）。

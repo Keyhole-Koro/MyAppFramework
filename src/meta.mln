@@ -1,0 +1,56 @@
+package meta;
+
+// The annotation metadata the compiler recorded, read back as rows.
+//
+// Every module with annotations gets a generated `__annotations()` table:
+// [count, row0..., row1...] with 8 words per row --
+// name (char*), fn, type (char*), size, argc, arg0, arg1, arg2. The module
+// that declared `extern i32* __annotations_table(i32 m);` (MyOS's boot,
+// main.mln) received its definition: the m-th annotated module's table, 0
+// past the end. This package flattens those into one index space so a
+// reader can loop 0..count() without knowing about modules.
+
+extern i32* __annotations_table(i32 m);
+
+i32 ROW = 8;
+
+// Locate row i: returns a pointer to its first word, or 0.
+i32* row(i32 index) {
+    i32 m = 0;
+    while (1) {
+        i32 *t = __annotations_table(m);
+        if (t == 0) { return (i32*)0; }
+        i32 rows = t[0];
+        if (index < rows) { return &t[1 + index * ROW]; }
+        index = index - rows;
+        m++;
+    }
+    return (i32*)0;
+}
+
+export i32 count() {
+    i32 total = 0;
+    i32 m = 0;
+    while (1) {
+        i32 *t = __annotations_table(m);
+        if (t == 0) { return total; }
+        total = total + t[0];
+        m++;
+    }
+    return total;
+}
+
+export char* name(i32 i) { i32 *r = row(i); if (r == 0) { return ""; } return (char*)r[0]; }
+export i32 fn(i32 i)     { i32 *r = row(i); if (r == 0) { return 0; }  return r[1]; }
+export char* type(i32 i) { i32 *r = row(i); if (r == 0) { return ""; } return (char*)r[2]; }
+export i32 size(i32 i)   { i32 *r = row(i); if (r == 0) { return 0; }  return r[3]; }
+export i32 argc(i32 i)   { i32 *r = row(i); if (r == 0) { return 0; }  return r[4]; }
+
+// Argument k (0..2) as recorded: a number, a bool as 0/1, or a char* as i32.
+export i32 arg(i32 i, i32 k) {
+    i32 *r = row(i);
+    if (r == 0) { return 0; }
+    if (k < 0) { return 0; }
+    if (k >= 3) { return 0; }
+    return r[5 + k];
+}
