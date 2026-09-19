@@ -42,10 +42,10 @@ void (Counter *c) click(i32 id) {
   等（Java の `@interface` 相当。呼ばれない）。コンパイラは使用箇所を宣言と照合して
   メタデータ表に記録し、`app.install()` が起動時に表を読んで意味を与える。
   import していない名前・引数の形が違う使い方はコンパイルエラー。
-- **アプリは `boot/main.mln` が import する。** import されたモジュールがプログラムに
-  入り、そのメタデータ表が集まる（main.mln の `extern i32* __annotations_table(i32 m);`）。
-  framework はアプリを知らない。将来はアプリを MFS 上の .mbin にしてローダが表を読む
-  形にする予定（main.mln の TODO）。
+- **アプリは `boot/main.mln` が import する。** import されたモジュールがプログラムに入り、
+  各モジュールのメタデータ行（`annotations` 束ねセクション）を**リンカ**が
+  `__annotations_start..end` の索引に集める。framework はアプリを知らない。将来はアプリを
+  MFS 上の .mbin にしてローダが表を読む形にする予定（main.mln の TODO）。
 - **レシーバはポインタか参照** (`Counter *c` / `ref mut Counter c`)。framework はインスタンスの
   アドレスを第一引数に渡すので、値レシーバ（move）は使えない（コンパイルエラー）。
 - **`ref={c->label}`** はそのノードの id をフィールドに書く。木を歩いて id を
@@ -94,11 +94,13 @@ export void app(i32 view, char *type, i32 size, bool single = false, char *name 
 export void timer(i32 fn, char *type, i32 size, i32 ms);
 ```
 
-`@timer(100)` を `Terminal` の `poll` に付けると、コンパイラは terminal.dom.mln の表
-`terminal___annotations()` に 1 行 `["timer", Terminal__poll, "Terminal", sizeof(Terminal), 1, 100, 0, 0]`
-を記録する。`app.install()` が `meta.mln` 経由で全行を読み、`"app"` / `"timer"` / … を
-型名キーのレジストリ（`register_*`）に振り分ける。順序・検証・いつ読むかは `app.mln` が
-決める。他の framework が自分のアノテーションを同じ表に混ぜても、知らない名前は読み飛ばす。
+`@timer(100)` を `Terminal` の `poll` に付けると、コンパイラは terminal.dom.mln の
+`annotations` セクションに 1 行 `["timer", Terminal__poll, "Terminal", sizeof(Terminal), 1, 100, 0, 0]`
+を静的データとして出す。リンカが全モジュールの行を索引にまとめ（`__annotations_start`）、
+`app.install()` が `meta.mln` 経由で全行を読み、`"app"` / `"timer"` / … を型名キーの
+レジストリ（`register_*`）に振り分ける。順序・検証・いつ読むかは `app.mln` が決める。
+他の framework が自分のアノテーションを同じ表に混ぜても、知らない名前は読み飛ばす。
+仕様は `docs/design/toolchain-collected-sections.md`。
 
 - **ハンドラ ABI は 1 種類**: `void handler(i32 owner, i32 id, i32 arg)`。
   `owner` はインスタンスのポインタ。呼び出し規約が余分な引数を無視するので、
@@ -117,12 +119,9 @@ export void timer(i32 fn, char *type, i32 size, i32 ms);
 - **レジストリ** (`app.mln`): 型名ごとに size / view / single / name / open / on_close /
   timer 表 / key 表。`"Ctrl+S"` の解釈は `key_spec_matches`。
 - **メタデータ表** (`meta.mln`): 1 行 8 ワード（名前・関数・型名・サイズ・引数数・引数×3）。
-  レイアウトは `grammar.md` "Attributes and annotations"。
-- **表の集約**は `main.mln`（アプリを import している唯一の場所）の
-  `extern i32* __annotations_table(i32 m);` 宣言をコンパイラが定義に置き換えることで行う。
-  コンパイルは `main.mln` からの import 追跡で決まり、リンカにセクションが無いので、
-  「宣言だけで表に載る」仕掛けは無い。アプリを fs 上の .mbin にする段階でここは
-  ローダに移る。
+  リンカの索引 `__annotations_start..end` の `(アドレス, サイズ)` ペアを歩く。
+- **表の集約はリンカ**（`.section annotations` の束ね）。`main.mln` に目印は無い。
+  アプリを fs 上の .mbin にする段階では、同じ索引を MBIN ヘッダに載せてローダが読む。
 
 ## 検証
 
@@ -143,9 +142,8 @@ python3 system/MyOS/tests/apps_e2e_test.py        # プロセス / エディタ 
   コピーされない。文レベルの 2 段 case で読む（`files.dom.mln` の `refresh`）。
 - `@task` は無くした（`scheduler.spawn_task` がタスク引数を取れるようになったら関数を 1 つ足すだけ）。
 - struct のフィールド初期化子 (`i32 step = 1;`) は効かない（生成コードが無い）。view() で入れる。
-- グローバルの**ポインタ配列** (`char *g[16]`) は誤コンパイルされる（コンパイラの既知バグ）。
-  `app.mln` は `i32` 配列 + キャストで持っている。
-- リンカは同名シンボルの重複を検出しない。`extern i32* __annotations_table(i32 m);` を
-  アプリに到達できる 2 つのモジュールが宣言すると、片方が黙って選ばれる。
+- グローバルの**ポインタ配列**への実行時代入 (`char *g[16]; g[0] = "x";`) は誤コンパイル
+  される（要素ストライドの既知バグ）。`app.mln` は `i32` 配列 + キャストで持っている。
+  静的初期化 (`char *g[] = {"a", "b"};`) は `.word` で正しく出る。
 - リポジトリ間の依存は MyOS/src/apps → MyAppFramework → MyOS/src/ui（UI server）と
   循環している。UI server を切り出せば解ける（`docs/learn/annotations-and-metaprogramming.md`）。

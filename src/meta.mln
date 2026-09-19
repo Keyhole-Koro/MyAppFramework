@@ -2,41 +2,50 @@ package meta;
 
 // The annotation metadata the compiler recorded, read back as rows.
 //
-// Every module with annotations gets a generated `__annotations()` table:
-// [count, row0..., row1...] with 8 words per row --
-// name (char*), fn, type (char*), size, argc, arg0, arg1, arg2. The module
-// that declared `extern i32* __annotations_table(i32 m);` (MyOS's boot,
-// main.mln) received its definition: the m-th annotated module's table, 0
-// past the end. This package flattens those into one index space so a
-// reader can loop 0..count() without knowing about modules.
+// Every module with annotations carries a chunk of the `annotations`
+// collected section: 8 words per row -- name (char*), fn, type (char*),
+// size, argc, arg0, arg1, arg2 (toolchain/MyLangCompiler/docs/grammar.md,
+// "Attributes and annotations"). The linker gathers every object's chunk
+// into an index of (address, size) pairs between __annotations_start and
+// __annotations_end (toolchain/MyLinker/inc/ObjectFormat.h, CollectEntry).
+// This package flattens the chunks into one index space so a reader can
+// loop 0..count() without knowing about modules or objects.
 
-extern i32* __annotations_table(i32 m);
+extern i32 __annotations_start[];
+extern i32 __annotations_end[];
 
 i32 ROW = 8;
 
-// Locate row i: returns a pointer to its first word, or 0.
+i32 pairs() {
+    i32 s = (i32)(&__annotations_start[0]);
+    i32 e = (i32)(&__annotations_end[0]);
+    return (e - s) / 8;
+}
+
+i32 chunk_addr(i32 p) { return __annotations_start[p * 2]; }
+i32 chunk_rows(i32 p) { return __annotations_start[p * 2 + 1] / 32; }
+
+// Locate row i: a pointer to its first word, or 0.
 i32* row(i32 index) {
-    i32 m = 0;
-    while (1) {
-        i32 *t = __annotations_table(m);
-        if (t == 0) { return (i32*)0; }
-        i32 rows = t[0];
-        if (index < rows) { return &t[1 + index * ROW]; }
+    i32 n = pairs();
+    i32 p = 0;
+    while (p < n) {
+        i32 rows = chunk_rows(p);
+        if (index < rows) {
+            i32 *t = (i32*)chunk_addr(p);
+            return &t[index * ROW];
+        }
         index = index - rows;
-        m++;
+        p++;
     }
     return (i32*)0;
 }
 
 export i32 count() {
     i32 total = 0;
-    i32 m = 0;
-    while (1) {
-        i32 *t = __annotations_table(m);
-        if (t == 0) { return total; }
-        total = total + t[0];
-        m++;
-    }
+    i32 n = pairs();
+    i32 p = 0;
+    while (p < n) { total = total + chunk_rows(p); p++; }
     return total;
 }
 
