@@ -1,8 +1,8 @@
 # MyAppFramework — MyOS アプリケーションフレームワーク
 
-`src/annotations.mln`（`@app` 等の**宣言**）、`src/meta.mln`（コンパイラが残した
-メタデータ表の読み手）、`src/app.mln`（レジストリ・起動・イベント配送）、`src/ui.mln`
-（アプリが呼べる UI API）で成り立つ、デスクトップアプリの書き方とその裏側。
+`src/annotations.mln`（`@app` 等の**宣言**）、`src/app.mln`（レジストリ・起動・イベント配送）、
+`src/ui.mln`（アプリが呼べる UI API）で成り立つ、デスクトップアプリの書き方とその裏側。
+コンパイラが残したメタデータ表の読み手は MyStdLib（`meta/annotations.mln`）。
 コンパイラは「`@a(x)` を宣言と照合して、モジュールの表に 1 行記録する」ことしか知らない
 （`toolchain/MyLangCompiler/docs/grammar.md` "Attributes and annotations"）。`@app` の
 **意味**と、いつ処理するか（ライフサイクル）は全部このリポジトリにある。
@@ -43,8 +43,8 @@ void (Counter *c) click(i32 id) {
   メタデータ表に記録し、`app.install()` が起動時に表を読んで意味を与える。
   import していない名前・引数の形が違う使い方はコンパイルエラー。
 - **アプリは `boot/main.mln` が import する。** import されたモジュールがプログラムに入り、
-  各モジュールのメタデータ行（`annotations` 束ねセクション）を**リンカ**が
-  `__annotations_start..end` の索引に集める。framework はアプリを知らない。将来はアプリを
+  各モジュールのメタデータ行（`annotations` 束ねセクション）を**リンカ**が 1 本の表に
+  連結する。framework はアプリを知らない。将来はアプリを
   MFS 上の .mbin にしてローダが表を読む形にする予定（main.mln の TODO）。
 - **レシーバはポインタか参照** (`Counter *c` / `ref mut Counter c`)。framework はインスタンスの
   アドレスを第一引数に渡すので、値レシーバ（move）は使えない（コンパイルエラー）。
@@ -96,11 +96,19 @@ export void timer(i32 fn, char *type, i32 size, i32 ms);
 
 `@timer(100)` を `Terminal` の `poll` に付けると、コンパイラは terminal.dom.mln の
 `annotations` セクションに 1 行 `["timer", Terminal__poll, "Terminal", sizeof(Terminal), 1, 100, 0, 0]`
-を静的データとして出す。リンカが全モジュールの行を索引にまとめ（`__annotations_start`）、
-`app.install()` が `meta.mln` 経由で全行を読み、`"app"` / `"timer"` / … を型名キーの
-レジストリ（`register_*`）に振り分ける。順序・検証・いつ読むかは `app.mln` が決める。
-他の framework が自分のアノテーションを同じ表に混ぜても、知らない名前は読み飛ばす。
-仕様は `docs/design/toolchain-collected-sections.md`。
+を静的データとして出す。リンカが全モジュールの行を 1 本の `annotations` セクションに連結し、
+`app.install()` が MyStdLib のイテレータで名前ごとに読む：
+
+```mylang
+Annotations apps = annotations.named("app");
+while (apps.next()) {
+    register_app(apps.type(), apps.size(), apps.fn(), apps.arg(0), apps.text(1));
+}
+```
+
+`"app"` / `"timer"` / … を型名キーのレジストリ（`register_*`）に振り分ける。順序・検証・
+いつ読むかは `app.mln` が決める。他の framework が自分のアノテーションを同じ表に混ぜても、
+頼んでいない名前の行は見えない。仕様は `docs/design/toolchain-collected-sections.md`。
 
 - **ハンドラ ABI は 1 種類**: `void handler(i32 owner, i32 id, i32 arg)`。
   `owner` はインスタンスのポインタ。呼び出し規約が余分な引数を無視するので、
@@ -118,10 +126,12 @@ export void timer(i32 fn, char *type, i32 size, i32 ms);
   `dom.remove_owned(owner)` で一括回収される。
 - **レジストリ** (`app.mln`): 型名ごとに size / view / single / name / open / on_close /
   timer 表 / key 表。`"Ctrl+S"` の解釈は `key_spec_matches`。
-- **メタデータ表** (`meta.mln`): 1 行 8 ワード（名前・関数・型名・サイズ・引数数・引数×3）。
-  リンカの索引 `__annotations_start..end` の `(アドレス, サイズ)` ペアを歩く。
-- **表の集約はリンカ**（`.section annotations` の束ね）。`main.mln` に目印は無い。
-  アプリを fs 上の .mbin にする段階では、同じ索引を MBIN ヘッダに載せてローダが読む。
+- **メタデータ表** (`toolchain/MyStdLib/meta/annotations.mln`): 1 行 8 ワード（名前・関数・
+  型名・サイズ・引数数・引数×3）。`section.as_slice<AnnotationRow>("annotations")` で表を
+  スライスとして取り、`Annotations` カーソルが名前／型でフィルタしながら歩く。
+- **表の集約はリンカ**（`.section annotations` の束ね、`__sections` ディレクトリ）。`main.mln`
+  に目印は無い。アプリを fs 上の .mbin にする段階では、同じディレクトリを MBIN ヘッダに載せて
+  ローダが読む。
 
 ## 検証
 

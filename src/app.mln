@@ -10,17 +10,19 @@ import dom_widgets from "../../MyOS/src/ui/dom/dom_widgets.mln";
 import dom_render from "../../MyOS/src/ui/dom/dom_render.mln";
 import compositor from "../../MyOS/src/ui/compositor.mln";
 import graphics from "../../MyOS/src/ui/graphics.mln";
-import meta from "meta.mln";
+import annotations from "../../../toolchain/MyStdLib/meta/annotations.mln";
+import { Annotations } from "../../../toolchain/MyStdLib/meta/annotations.mln";
 
 // Application framework: the registry of installed apps and the instances
 // running on the desktop.
 //
 // An app is a struct whose view method carries `@app` (annotations.mln).
-// The compiler records every annotation as a metadata row; install() reads
-// the rows (meta.mln) and files them into the registry below by the type's
-// name, so `@timer` on Terminal's poll and `@app` on Terminal's view land in
-// the same slot whatever order they appear in. What an annotation means,
-// and when it is acted on, is decided here, not by the compiler.
+// The compiler records every annotation as a metadata row; install() walks
+// the rows (MyStdLib's annotations iterator) and files them into the
+// registry below by the type's name, so `@timer` on Terminal's poll and
+// `@app` on Terminal's view land in the same slot whatever order they appear
+// in. What an annotation means, and when it is acted on, is decided here,
+// not by the compiler.
 //
 // Every registered function is a method, called with the instance pointer
 // first: view(self), poll(self), save(self, id), open(self, path). The DOM
@@ -422,26 +424,29 @@ export i32 dispatch_key(i32 owner, i32 code, i32 mods) {
 // got @timer/@key/@open but no @app is a mistake in the app's source,
 // reported here since the compiler does not know what @app means.
 export void install() {
-    i32 n = meta.count();
-    i32 i = 0;
-    while (i < n) {
-        char *a = meta.name(i);
-        if (str.eq(a, "app") != 0) {
-            register_app(meta.type(i), meta.size(i), meta.fn(i), meta.arg(i, 0), (char*)meta.arg(i, 1));
-        } else if (str.eq(a, "timer") != 0) {
-            register_timer(meta.type(i), meta.arg(i, 0), meta.fn(i));
-        } else if (str.eq(a, "key") != 0) {
-            register_key(meta.type(i), (char*)meta.arg(i, 0), meta.fn(i));
-        } else if (str.eq(a, "open") != 0) {
-            register_open(meta.type(i), meta.fn(i));
-        } else if (str.eq(a, "on_close") != 0) {
-            register_on_close(meta.type(i), meta.fn(i));
-        } else {
-            // Some other framework's annotation: not ours to interpret.
-        }
-        i++;
+    // Rows of names we don't know (some other framework's annotations) are
+    // simply never asked for.
+    Annotations apps = annotations.named("app");
+    while (apps.next()) {
+        register_app(apps.type(), apps.size(), apps.fn(), apps.arg(0), apps.text(1));
     }
-    i = 0;
+    Annotations timers = annotations.named("timer");
+    while (timers.next()) {
+        register_timer(timers.type(), timers.arg(0), timers.fn());
+    }
+    Annotations keys = annotations.named("key");
+    while (keys.next()) {
+        register_key(keys.type(), keys.text(0), keys.fn());
+    }
+    Annotations opens = annotations.named("open");
+    while (opens.next()) {
+        register_open(opens.type(), opens.fn());
+    }
+    Annotations closers = annotations.named("on_close");
+    while (closers.next()) {
+        register_on_close(closers.type(), closers.fn());
+    }
+    i32 i = 0;
     while (i < g_app_count) {
         if (g_view[i] == 0) {
             debug.println((char*)g_type[i]);

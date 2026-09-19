@@ -14,8 +14,9 @@ package annotations;
 // arguments; nothing ever calls it. The compiler checks every `@name(args)`
 // against the prototype and records a row -- name, the annotated function,
 // its receiver type's name and size, the arguments -- in the module's
-// metadata table. app.mln reads those rows at boot (through meta.mln) and
-// decides what they mean, when, and in what order.
+// metadata table. app.mln reads those rows at boot (through MyStdLib's
+// meta/annotations.mln iterator) and decides what they mean, when, and in
+// what order.
 //
 // The first three parameters are always what the row carries about the
 // annotated function; the rest are the annotation's own arguments, literal
