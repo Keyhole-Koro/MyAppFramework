@@ -6,14 +6,14 @@ package uiproto;
 // Both sides import this file -- the SDK to send, the server to receive --
 // and neither imports the other (docs/design/os-app-boundaries.md).
 //
-// Requests are synchronous and return one i32. The two carriers below are
-// prototypes: the OS implements them (MyOS/src/ui/ui_channel.mln) over
-// kernel channels -- a request goes to the UI server's task and the caller
-// sleeps until the reply; events queue up for the app to poll. Nothing an
-// app sends or receives is a pointer the other side must follow except the
-// strings, and those are copied at the boundary once apps are processes
-// (MYOS-022); results that are text (TEXT_COPY, LIST_ITEM) are written into
-// a buffer the app names. The message table is docs/design/ui-protocol.md.
+// Requests are synchronous and return one i32. The carriers below are
+// prototypes; uiproto.mln implements them for a process (OS_CALL
+// syscalls). A request goes to the UI server's task over a kernel channel
+// and the caller yields until the reply; events queue up for the app to
+// poll. The OS copies at the boundary everything a message names by
+// pointer -- strings in, and the buffers results are written to (TEXT_COPY,
+// LIST_ITEM) out -- so nothing an app holds points into the server. The
+// message table is docs/design/ui-protocol.md.
 
 // A request: op, the instance it comes from (nodes created by it are owned
 // by that instance), up to six i32 arguments and up to two strings. Which
@@ -49,7 +49,7 @@ export enum UiOp {
     // ui.mln --- text
     SET_TEXT,          // (id, s0)
     TEXT_COPY,         // (id, a1 = out, a2 = cap) -> len; the text copied into the app's buffer
-    SET_TEXT_FMT,      // (id, s0 = fmt, a1, a2)
+    SET_TEXT_FMT,      // unused: set_text_fmt formats in the app and sends SET_TEXT
     // ui.mln --- widgets
     IS_CHECKED,        // (id) -> 0/1
     SET_CHECKED,       // (id, a1 = on)
@@ -115,3 +115,6 @@ export bool poll(UiEvent *out);
 
 // Nothing to do until the next event: give the CPU away for a tick.
 export void idle();
+
+// The instance is done (after EXIT): end the process.
+export void exit();

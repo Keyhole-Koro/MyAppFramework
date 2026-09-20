@@ -1,13 +1,26 @@
 # MyAppFramework — MyOS アプリケーションフレームワーク
 
-アプリがリンクする **SDK**。`src/annotations.mln`（`@app` 等の**宣言**）、`src/protocol.mln`
-（UI プロトコルのメッセージ表）、`src/ui.mln`（アプリが呼べる UI API）、`src/elements.mln`
-（markup の語彙とデフォルト）、`src/runtime.mln`（ハンドラ表とイベントループ）。`ui` と
-`elements` の 1 関数は 1 要求メッセージで、UI サーバ（`MyOS/src/ui/ui_server.mln`,
-`elements_server.mln`）がそれに答える。`@app` の意味（起動・ウィンドウ管理）はシェル
-（`MyOS/src/shell/app.mln`）、`@timer` / `@key` / `@open` / `@on_close` の意味は `runtime.mln`。
-コンパイラが残したメタデータ表の読み手は MyStdLib（`meta/annotations.mln`）。
-層の全体像は `docs/design/os-app-boundaries.md`、メッセージ表は `docs/design/ui-protocol.md`。
+アプリがリンクする **SDK**。アプリは 1 本の実行形式（`.mbin`、プロセス）で、リンクするのは
+この SDK と MyStdLib だけ：
+
+| ファイル | 役割 |
+| --- | --- |
+| `src/annotations.mln` | `@app` / `@timer` / `@key` / `@open` / `@on_close` の**宣言** |
+| `src/protocol.mln` | UI プロトコル：`UiMsg` / `UiEvent`、要求とイベントの表、運び手の宣言 |
+| `src/uiproto.mln` | 運び手の実装：`request` / `poll` / `idle` / `exit` = `OS_CALL` syscall |
+| `src/ui.mln` | アプリが呼べる UI API（1 関数 = 1 要求） |
+| `src/elements.mln` | markup の語彙とデフォルト（`<Window>` … = CREATE_\* 要求） |
+| `src/runtime.mln` | ハンドラ表、`start()`（`@app` の view を呼び、`@timer` / `@key` / `@open` / `@on_close` を登録）、`run()`（イベントループ）、`log()` |
+| `src/app_main.mln` | プロセスのエントリ：この image の `@app` 行を見つけて `start` → `run` |
+| `src/fs.mln`, `src/console.mln` | ファイルと他プロセス（`OS_CALL` の `FS_*` / `PROC_*`） |
+| `src/os_services.mln`, `src/os_call.masm` | サービス番号と syscall スタブ |
+
+UI サーバ（`MyOS/src/ui/ui_server.mln`, `elements_server.mln`）が要求に答え、`@app` の意味
+（インストール・起動・ウィンドウ管理・終了）はシェル（`MyOS/src/shell/app.mln`）。
+コンパイラが残したメタデータ表の読み手は MyStdLib（`meta/annotations.mln`）：シェルは
+ディスク上の各 `.mbin` のヘッダから `@app` 行を読んでランチャーに載せ、アプリのプロセスは
+自分の image の行から `@timer` 等を登録する。層の全体像は `docs/design/os-app-boundaries.md`、
+メッセージ表は `docs/design/ui-protocol.md`。
 コンパイラは「`@a(x)` を宣言と照合して、モジュールの表に 1 行記録する」ことしか知らない
 （`toolchain/MyLangCompiler/docs/grammar.md` "Attributes and annotations"）。`@app` の
 **意味**と、いつ処理するか（ライフサイクル）は全部このリポジトリにある。
@@ -125,19 +138,20 @@ while (apps.next()) {
   `onClick={c->click}` も `@timer` のメソッドも**メソッドの実体**をそのまま登録する
   （`(Counter *c, i32 id)` に `owner` と `id` が届く）。トランポリンは無い。
 - **イベント** (`docs/design/ui-protocol.md`): 所有ノードへのクリック・変更・タイマは
-  `dom.emit` が `UiEvent` としてリング（`ui_events`）に積み、アプリ側の `runtime.pump()` が
-  表を引いてメソッドを呼ぶ。アプリのコードは**アプリのタスク**（`shell/host.mln`。プロセス化
-  までの仮の置き場）でしか走らず、要求はカーネルのチャネルで UI サーバのタスクへ渡り、
-  返事が来るまでアプリは sleep する。DOM を触るのはサーバのタスクだけ（automation は
-  `dom.lock` を取って読む）。`@key` は「キーを widget に渡すか」を即決する必要があるので、
-  アプリが起動時に CLAIM_KEY で組み合わせを申告し、シェルが照合して KEY イベントにする。
-- **owner**: `Node.owner` は生成時に `dom.g_current_owner` が入る。framework は
-  `view()` とハンドラの実行中それをインスタンスに設定するので、アプリが途中で
-  作ったダイアログやタイマも同じ owner になり、ウィンドウを閉じると
-  `dom.remove_owned(owner)` で一括回収される。
-- **レジストリ** (`MyOS/src/shell/app.mln`): 型名ごとに size / view / single / name /
-  `@open` の有無。`"Ctrl+S"` の解釈は `key_spec_matches`（claim 表を照合）。タイマ・キー・
-  open・on_close のメソッドはシェルにはなく、アプリの `runtime.start()` が自分の行から登録する。
+  `dom.emit` が `UiEvent` としてそのプロセスのチャネルに積み、アプリ側の `runtime.run()` が
+  `poll` で取って表を引きメソッドを呼ぶ。要求は `OS_CALL` syscall でカーネルへ、カーネルの
+  `os_calls` がユーザメモリをコピーして UI サーバのタスクのチャネルへ渡し、返事が来るまで
+  アプリは `sys_yield` で待つ。DOM を触るのはサーバのタスクだけ（automation は `dom.lock`
+  を取って読む）。`@key` は「キーを widget に渡すか」を即決する必要があるので、アプリが
+  起動時に CLAIM_KEY で組み合わせを申告し、シェルが照合して KEY イベントにする。
+- **owner はプロセス**: 要求の `owner` はカーネルが pid に書き換える。`Node.owner` には
+  それが入るので、アプリが途中で作ったダイアログやタイマも同じ owner になり、ウィンドウを
+  閉じる → CLOSE → アプリが `@on_close` を走らせて EXIT → シェルが `dom.remove_owned(pid)`
+  で一括回収し、プロセスは終了する。
+- **レジストリ** (`MyOS/src/shell/app.mln`): ディスク上の実行形式ごとに path / type /
+  single / name / `@open` の有無（起動時に全 `.mbin` のヘッダから）。`"Ctrl+S"` の解釈は
+  `key_spec_matches`（claim 表を照合）。タイマ・キー・open・on_close のメソッドはシェルには
+  なく、アプリの `runtime.start()` が自分の行から登録する。
 - **メタデータ表** (`toolchain/MyStdLib/meta/annotations.mln`): 1 行 8 ワード（名前・関数・
   型名・サイズ・引数数・引数×3）。`section.as_slice<AnnotationRow>("annotations")` で表を
   スライスとして取り、`Annotations` カーソルが名前／型でフィルタしながら歩く。
@@ -148,7 +162,7 @@ while (apps.next()) {
 ## 検証
 
 ```
-make build
+make build                                        # アプリは build/user/*.mbin → disk.img
 python3 system/MyOS/tests/app_framework_test.py   # launcher / single / @key / @open / close / dialog（make framework-test）
 python3 system/MyOS/tests/dom_click_test.py       # Counter と Notes の操作
 python3 system/MyOS/tests/apps_e2e_test.py        # プロセス / エディタ / ファイラ
@@ -167,7 +181,9 @@ python3 system/MyOS/tests/apps_e2e_test.py        # プロセス / エディタ 
 - グローバルの**ポインタ配列**への実行時代入 (`char *g[16]; g[0] = "x";`) は誤コンパイル
   される（要素ストライドの既知バグ）。シェルの `app.mln` は `i32` 配列 + キャストで持っている。
   静的初期化 (`char *g[] = {"a", "b"};`) は `.word` で正しく出る。
-- アプリはまだ UI サーバと同じアドレス空間で動く（チャネルのメッセージにポインタが
-  そのまま乗る）。プロセス化は MYOS-022。
-- アプリが `fs` などカーネルのモジュールを直接 import している（editor / files / terminal）。
-  プロセス化のときに syscall へ置き換える。
+- 1 プロセス 1 インスタンス（`app_main.mln` の 4 KiB の struct 領域）。`@app(single)` は
+  シェルが 2 回目の起動を既存プロセスへ向けることで実現する。
+- プロセスのスタックは 16 KiB、ヒープ（`sbrk`）は SDK からは使っていない。大きなバッファは
+  モジュール変数に置く（editor の `g_save_text[4096]`）。
+- 文字列の上限：要求の s0 は 1024 バイト（`list_set_items`）、s1 は 128、TEXT_COPY の
+  戻りは 4096、イベントの文字列（OPEN のパス）は 64。

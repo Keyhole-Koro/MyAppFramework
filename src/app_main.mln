@@ -1,0 +1,30 @@
+package app;
+
+// The entry point of an application process. The user-space start stub
+// (system/MyOS/user/lib/start.masm) calls main(); this one finds the @app
+// row the compiler recorded in this image, starts an instance of that type
+// and runs its event loop until the instance exits.
+//
+// One instance per process: the struct lives here, sized for the largest
+// app; the row says how much of it the type uses.
+
+import runtime from "runtime.mln";
+// The process-side carriers of the UI protocol (OS_CALL syscalls). Nothing
+// here calls them; importing the file is what links them into the image.
+import uiproto from "uiproto.mln";
+import annotations from "../../../toolchain/MyStdLib/meta/annotations.mln";
+import { Annotations } from "../../../toolchain/MyStdLib/meta/annotations.mln";
+
+i32 INSTANCE_MAX = 4096;
+char g_instance[4096];
+
+export i32 main() {
+    Annotations rows = annotations.named("app");
+    if (!rows.next()) { return 1; }
+    if (rows.size() > INSTANCE_MAX) { return 2; }
+    i32 i = 0;
+    while (i < INSTANCE_MAX) { g_instance[i] = (char)0; i++; }
+    runtime.start((i32)(&g_instance[0]), rows.type());
+    runtime.run();
+    return 0;
+}

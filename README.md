@@ -2,11 +2,13 @@
 
 The SDK a [MyOS](https://github.com/Keyhole-Koro/MyOS) application links
 against, written in MyLang. Lives at `system/MyAppFramework` in
-[MyComputer](https://github.com/Keyhole-Koro/MyComputer). It imports nothing
-from MyOS or MyKernel: an app talks to the UI server only through the UI
-protocol (`protocol.mln`), and the OS talks back only through events. See
-`docs/design/os-app-boundaries.md` in MyComputer for the layers and
-`docs/design/ui-protocol.md` for the message table.
+[MyComputer](https://github.com/Keyhole-Koro/MyComputer). An app is a
+process -- an MBIN executable on the disk, built from its `.dom.mln` plus
+this SDK -- and this is everything it links: the SDK imports nothing from
+MyOS or MyKernel. It reaches the OS only through the `OS_CALL` syscall
+(the UI protocol, files, other processes), and the OS talks back only
+through events. See `docs/design/os-app-boundaries.md` in MyComputer for
+the layers and `docs/design/ui-protocol.md` for the message table.
 
 | file | what it is |
 | --- | --- |
@@ -14,7 +16,10 @@ protocol (`protocol.mln`), and the OS talks back only through events. See
 | `src/protocol.mln` | the UI protocol: `UiMsg` / `UiEvent`, the op and event tables (`docs/design/ui-protocol.md`); both sides import it |
 | `src/ui.mln` | the UI API an app talks to: i32 and `char*` only. Each function is one request; the UI server answers it (`MyOS/src/ui/ui_server.mln`) |
 | `src/elements.mln` | the markup vocabulary (`<Window>`, `<Label>`, ...) with its defaults; each is one CREATE_* request (`MyOS/src/ui/elements_server.mln`). Handlers stay in the app |
-| `src/runtime.mln` | the app side: handler table, `start()` (runs the @app view, sets up @timer / @key / @open / @on_close from the app's own annotation rows), `pump()` (delivers events) |
+| `src/uiproto.mln`, `src/os_call.masm`, `src/os_services.mln` | the carriers of the protocol as `OS_CALL` syscalls, the syscall stub, and the service numbers the OS handler (`MyOS/src/proc/os_calls.mln`) shares |
+| `src/runtime.mln` | the app side: handler table, `start()` (runs the @app view, sets up @timer / @key / @open / @on_close from the app's own annotation rows), `run()` (the event loop), `log()` |
+| `src/app_main.mln` | the process entry: finds the @app row in the image, starts the instance, runs the loop |
+| `src/fs.mln`, `src/console.mln` | files and other processes, as `FS_*` / `PROC_*` services |
 | `docs/APP_FRAMEWORK.md` | how to write an app, and how the framework runs it |
 
 An app:

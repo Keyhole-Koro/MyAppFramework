@@ -1,0 +1,44 @@
+package os_services;
+
+// The services an application reaches through the OS_CALL syscall
+// (MyKernel syscall.mln): OS_CALL(service, args) with `args` pointing at
+// an i32 array (or a UiMsg / UiEvent) in the app's memory. Both sides
+// import this file -- the SDK's stubs (uiproto / fs / console) to send, the
+// OS's handler (MyOS/src/proc/os_calls.mln) to dispatch -- and neither
+// imports the other. What each service takes and returns is documented at
+// the stub that sends it.
+
+export enum OsService {
+    NONE,
+    // UI protocol (protocol.mln)
+    UI_REQUEST,     // (UiMsg*) -> 0; queues the request for the UI server
+    UI_REPLY,       // (i32 *out) -> 1 with out[0] = the result when the reply is in, else 0
+    UI_POLL,        // (UiEvent*, char *text_buf) -> 1 with the event copied in, else 0
+    // filesystem
+    FS_OPEN,        // (char *path) -> fd | -error
+    FS_CREATE,      // (char *path) -> fd | -error
+    FS_READ,        // (args[3] = fd, buf, size) -> bytes | -error
+    FS_WRITE,       // (args[3] = fd, buf, size) -> bytes | -error
+    FS_SEEK,        // (args[3] = fd, offset, whence) -> position | -error
+    FS_CLOSE,       // (args[1] = fd) -> 0
+    FS_REMOVE,      // (char *path) -> 0 | -error
+    FS_DIR_NEXT,    // (args[3] = start, out, cap) -> entry index | -1 at the end | -error
+    FS_ENTRY_SIZE,  // (args[1] = idx) -> bytes
+    // processes (console.mln)
+    PROC_SPAWN,     // (args[2] = char *path, node) -> pid | 0; stdout bound to `node` (0: none) before it runs
+    PROC_BIND,      // (args[2] = pid, node) -> 0; the process's stdout goes to that TextArea
+    PROC_UNBIND,    // (args[1] = pid) -> 0
+    PROC_EXITED,    // (args[1] = pid) -> 1 if it has exited
+    PROC_REAP,      // (args[1] = pid) -> exit code
+    PROC_FEED,      // (args[2] = pid, char *line) -> 0; one line of stdin
+    // diagnostics
+    LOG,            // (char *line) -> 0; a line on the kernel's debug console
+};
+
+// Errors an FS service reports as a negative result.
+export i32 ERR_NOT_FOUND = 1;
+export i32 ERR_NO_SLOT = 2;
+export i32 ERR_IO = 3;
+export i32 ERR_BAD_FD = 4;
+export i32 ERR_INVALID = 5;
+export i32 ERR_EXISTS = 6;

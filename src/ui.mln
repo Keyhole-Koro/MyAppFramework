@@ -1,6 +1,7 @@
 package ui;
 
 import runtime from "runtime.mln";
+import strbuf from "../../../toolchain/MyStdLib/text/strbuf.mln";
 import { UiOp } from "protocol.mln";
 
 // The UI an application is allowed to talk to. Apps import this and the
@@ -28,11 +29,45 @@ export void set_text(i32 id, char *s) { runtime.send(UiOp::SET_TEXT, id, 0, 0, 0
 // read past.
 export i32 text_copy(i32 id, char *out, i32 cap) { return runtime.send(UiOp::TEXT_COPY, id, (i32)out, cap, 0, 0, 0, "", ""); }
 
-// Labels keep a pointer to their text rather than a copy, so formatted text
-// needs a buffer that outlives the call. set_text_fmt keeps one per label
-// (96 bytes, allocated on first use) and formats `fmt` into it: `%d` takes
-// the next i32 argument, `%s` the next as a char*, `%%` is a percent sign.
-export void set_text_fmt(i32 id, char *fmt, i32 a, i32 b) { runtime.send(UiOp::SET_TEXT_FMT, id, a, b, 0, 0, 0, fmt, ""); }
+// set_text with a format: `%d` takes the next i32 argument, `%s` the next
+// as a char*, `%%` is a percent sign. (The server keeps its own copy of
+// every text it is given, so the app's buffers are its own business.)
+char g_fmt_buf[256];
+export void set_text_fmt(i32 id, char *fmt, i32 a, i32 b) {
+    // Formatted here, in the app: a `%s` argument is a pointer into this
+    // process, which only this side can read. The server gets plain text.
+    char *buf = &g_fmt_buf[0];
+    i32 n = strbuf.reset(buf);
+    i32 next = 0;
+    i32 i = 0;
+    while (fmt[i] != 0) {
+        i32 c = fmt[i] & 0xFF;
+        if (c == '%') {
+            i32 spec = fmt[i + 1] & 0xFF;
+            i32 value = a;
+            if (next == 1) { value = b; }
+            if (spec == 'd') {
+                n = strbuf.append_i32(buf, 256, n, value);
+                next++;
+                i = i + 2;
+            } else if (spec == 's') {
+                if (value != 0) { n = strbuf.append(buf, 256, n, (char*)value); }
+                next++;
+                i = i + 2;
+            } else if (spec == '%') {
+                n = strbuf.push(buf, 256, n, '%');
+                i = i + 2;
+            } else {
+                n = strbuf.push(buf, 256, n, c);
+                i++;
+            }
+        } else {
+            n = strbuf.push(buf, 256, n, c);
+            i++;
+        }
+    }
+    set_text(id, buf);
+}
 
 // --- widgets --------------------------------------------------------------------------------
 
