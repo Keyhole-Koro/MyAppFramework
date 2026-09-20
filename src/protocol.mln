@@ -1,0 +1,111 @@
+package uiproto;
+
+// The UI protocol: what crosses between an application and the UI server.
+// Every call an app makes through ui.mln / elements.mln is one request
+// message here, and everything the server tells an app is one event.
+// Both sides import this file -- the SDK to send, the server to receive --
+// and neither imports the other (docs/design/os-app-boundaries.md).
+//
+// Requests are synchronous and return one i32. The two carriers below are
+// prototypes: the OS implements them (MyOS/src/ui/ui_channel.mln). While
+// apps share the server's address space they are a call and a ring buffer;
+// when apps become processes they become syscalls and nothing here changes
+// except that strings are copied across (MYOS-020). The message table is
+// docs/design/ui-protocol.md.
+
+// A request: op, the instance it comes from (nodes created by it are owned
+// by that instance), up to six i32 arguments and up to two strings. Which
+// slots an op uses is in the table; unused ones are 0.
+export struct UiMsg {
+    i32 op;
+    i32 owner;
+    i32 a0;
+    i32 a1;
+    i32 a2;
+    i32 a3;
+    i32 a4;
+    i32 a5;
+    char *s0;
+    char *s1;
+};
+
+// An event from the server to the instance `owner`: what happened (`kind`)
+// to which node (`id`), with `arg` as the event's datum (a key event packs
+// code | mods << 16), `token` the claim it matched (KEY) and `text` its
+// string payload (OPEN: the path). See UiEventKind.
+export struct UiEvent {
+    i32 owner;
+    i32 id;
+    i32 kind;
+    i32 arg;
+    i32 token;
+    char *text;
+};
+
+export enum UiOp {
+    NONE,
+    // ui.mln --- text
+    SET_TEXT,          // (id, s0)
+    TEXT_OF,           // (id) -> char*
+    SET_TEXT_FMT,      // (id, s0 = fmt, a1, a2)
+    // ui.mln --- widgets
+    IS_CHECKED,        // (id) -> 0/1
+    SET_CHECKED,       // (id, a1 = on)
+    INPUT_SET,         // (id, s0)
+    AREA_APPEND,       // (id, s0)
+    AREA_CLEAR,        // (id)
+    AREA_LINES,        // (id) -> count
+    LIST_SET_ITEMS,    // (id, s0 = "\n"-joined)
+    LIST_COUNT,        // (id) -> count
+    LIST_SELECTED,     // (id) -> row | -1
+    LIST_ITEM,         // (id, a1 = row, a2 = out, a3 = cap) -> len | -1
+    // ui.mln --- focus and windows
+    FOCUS,             // (id)
+    FOCUS_WINDOW,      // (id)
+    CLOSE,             // (id) -- a window the app opened itself
+    WINDOW_OF,         // (id) -> window id
+    WINDOW_X,          // (id) -> logical x
+    WINDOW_Y,          // (id) -> logical y
+    SHOW,              // (id) -- mount a window on the desktop
+    TEST_ID,           // (id, s0)
+    SEND_KEY,          // (a0 = type, a1 = code, a2 = mods)
+    RGB,               // (a0, a1, a2) -> colour
+    OPEN,              // (s0 = path) -> window of the app that took it, or 0
+    // elements.mln --- node creation; every one returns the new node id
+    CREATE_WINDOW,     // (s0 = title, x, y, w, h, s1 = testId)
+    CREATE_BUTTON,     // (s0 = text, x, y, w, h, s1)
+    CREATE_PRIMARY_BUTTON,
+    CREATE_TEXT,       // (s0 = text, x, y, s1)
+    CREATE_LABEL,      // (s0 = text, x, y, color, bold, s1)
+    CREATE_BOX,        // (x, y, w, h, background, border)
+    CREATE_PANEL,      // (x, y, w, h, radius)
+    CREATE_COLUMN,     // (x, y, w, h, padding, gap)
+    CREATE_ROW,        // (x, y, w, h, padding, gap)
+    CREATE_TEXT_INPUT, // (s0 = placeholder, x, y, w, h, capacity, s1)
+    CREATE_CHECKBOX,   // (s0 = text, x, y, checked, s1)
+    CREATE_SEPARATOR,  // (x, y, w)
+    CREATE_TIMER,      // (a0 = interval) -- ticks are TIMER events
+    CREATE_TEXT_AREA,  // (s0 = name, x, y, w, h, capacity, readonly, s1)
+    CREATE_LIST,       // (s0 = name, x, y, w, h, capacity, s1)
+    APPEND_CHILD,      // (a0 = parent, a1 = child)
+    // runtime.mln --- lifecycle
+    CLAIM_KEY,         // (s0 = "Ctrl+S") -> token; KEY events carry it
+    EXIT,              // () -- the instance finished closing; the OS frees it
+};
+
+export enum UiEventKind {
+    NONE,
+    CLICK,      // id = the node
+    CHANGE,     // id = the node (TextInput edit, Checkbox toggle, List selection)
+    ACTIVATE,   // id = the List (Enter, or clicking the selected row)
+    TIMER,      // id = the timer
+    KEY,        // id = the window, arg = code | mods << 16, token = the claim
+    CLOSE,      // id = the window; the app answers with EXIT when done
+    OPEN,       // id = the window, text = the path
+};
+
+// Send a request and wait for its result.
+export i32 request(UiMsg *m);
+
+// Take the next event for this app; false when there is none.
+export bool poll(UiEvent *out);

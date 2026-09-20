@@ -3,16 +3,18 @@
 The SDK a [MyOS](https://github.com/Keyhole-Koro/MyOS) application links
 against, written in MyLang. Lives at `system/MyAppFramework` in
 [MyComputer](https://github.com/Keyhole-Koro/MyComputer). It imports nothing
-from MyOS or MyKernel: every file is an interface (prototypes), implemented on
-the OS side -- the UI server for `ui` / `elements`, the shell
-(`MyOS/src/shell/app.mln`) for what `@app` means. See
-`docs/design/os-app-boundaries.md` in MyComputer for the layers.
+from MyOS or MyKernel: an app talks to the UI server only through the UI
+protocol (`protocol.mln`), and the OS talks back only through events. See
+`docs/design/os-app-boundaries.md` in MyComputer for the layers and
+`docs/design/ui-protocol.md` for the message table.
 
 | file | what it is |
 | --- | --- |
 | `src/annotations.mln` | `@app`, `@timer`, `@key`, `@open`, `@on_close` -- declared as prototypes `(i32 fn, char *type, i32 size, ...)`, like a Java `@interface`; the compiler records each use as a metadata row |
-| `src/ui.mln` | the UI API an app talks to: i32 and `char*` only, so it can become a message / syscall surface. Prototypes only; the UI server implements it (`MyOS/src/ui/ui_server.mln`) |
-| `src/elements.mln` | the markup vocabulary (`<Window>`, `<Label>`, ...) with its defaults. Prototypes only; implemented by `MyOS/src/ui/elements.mln` |
+| `src/protocol.mln` | the UI protocol: `UiMsg` / `UiEvent`, the op and event tables (`docs/design/ui-protocol.md`); both sides import it |
+| `src/ui.mln` | the UI API an app talks to: i32 and `char*` only. Each function is one request; the UI server answers it (`MyOS/src/ui/ui_server.mln`) |
+| `src/elements.mln` | the markup vocabulary (`<Window>`, `<Label>`, ...) with its defaults; each is one CREATE_* request (`MyOS/src/ui/elements_server.mln`). Handlers stay in the app |
+| `src/runtime.mln` | the app side: handler table, `start()` (runs the @app view, sets up @timer / @key / @open / @on_close from the app's own annotation rows), `pump()` (delivers events) |
 | `docs/APP_FRAMEWORK.md` | how to write an app, and how the framework runs it |
 
 An app:

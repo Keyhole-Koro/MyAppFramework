@@ -1,0 +1,154 @@
+package runtime;
+
+// The application side of the framework: what runs inside an app to turn
+// its annotations and markup handlers into behaviour. There is one of these
+// per app (per process, eventually); the OS never calls into it -- it only
+// sends events (protocol.mln).
+//
+// - The handler table: `onClick={c->click}` in markup, @timer / @key /
+//   @open / @on_close methods -- all registered here as (owner, id, kind)
+//   -> function, and called from pump() when the matching event arrives.
+//   The server holds no app function pointers.
+// - start(): what an instance does when launched -- run its @app view, set
+//   up its timers and key claims, note its open / close handlers.
+// - pump(): take every pending event and dispatch it.
+//
+// Handlers are called as fn(owner, id, arg) with owner = the instance, so
+// a method `void (T *self) tick()` or `void (T *self) save(i32 id)` is
+// passed as is (the calling convention ignores trailing arguments).
+
+import uiproto from "protocol.mln";
+import { UiMsg, UiEvent, UiOp, UiEventKind } from "protocol.mln";
+import annotations from "../../../toolchain/MyStdLib/meta/annotations.mln";
+import { Annotations } from "../../../toolchain/MyStdLib/meta/annotations.mln";
+
+// The instance whose code is running: requests carry it as the owner of
+// what they create, and events restore it around their handler.
+i32 g_owner = 0;
+
+export i32 owner() { return g_owner; }
+
+// --- handler table ---------------------------------------------------------------------
+
+i32 HANDLERS_MAX = 256;
+i32 g_h_owner[256];
+i32 g_h_key[256];    // node id, KEY claim token, or 0 for OPEN / CLOSE
+i32 g_h_kind[256];
+i32 g_h_fn[256];
+i32 g_h_count = 0;
+
+// Register fn for (key, kind) on the current instance.
+export void on(i32 key, i32 kind, i32 fn) {
+    if (fn == 0) { return; }
+    i32 i = 0;
+    while (i < g_h_count) {
+        if (g_h_fn[i] == 0) { break; }
+        i++;
+    }
+    if (i == g_h_count) {
+        if (g_h_count >= HANDLERS_MAX) { return; }
+        g_h_count++;
+    }
+    g_h_owner[i] = g_owner;
+    g_h_key[i] = key;
+    g_h_kind[i] = kind;
+    g_h_fn[i] = fn;
+}
+
+i32 lookup(i32 owner, i32 key, i32 kind) {
+    i32 i = 0;
+    while (i < g_h_count) {
+        if (g_h_fn[i] != 0 && g_h_owner[i] == owner && g_h_key[i] == key && g_h_kind[i] == kind) {
+            return g_h_fn[i];
+        }
+        i++;
+    }
+    return 0;
+}
+
+void forget(i32 owner) {
+    i32 i = 0;
+    while (i < g_h_count) {
+        if (g_h_owner[i] == owner) { g_h_fn[i] = 0; }
+        i++;
+    }
+}
+
+// --- requests ------------------------------------------------------------------------------
+
+// Build and send one request as the current instance.
+export i32 send(i32 op, i32 a0, i32 a1, i32 a2, i32 a3, i32 a4, i32 a5, char *s0, char *s1) {
+    UiMsg m;
+    m.op = op;
+    m.owner = g_owner;
+    m.a0 = a0; m.a1 = a1; m.a2 = a2; m.a3 = a3; m.a4 = a4; m.a5 = a5;
+    m.s0 = s0;
+    m.s1 = s1;
+    return uiproto.request(&m);
+}
+
+// --- lifecycle -----------------------------------------------------------------------------
+
+// Launch `self`, an instance of the type named `type`: run its @app view
+// (returns the window), create its @timer timers, claim its @key
+// shortcuts and remember its @open / @on_close methods. The annotation
+// rows are read here, in the app, so the OS needs to know nothing about
+// those annotations but @app itself.
+export i32 start(i32 self, char *type) {
+    i32 outer = g_owner;
+    g_owner = self;
+    i32 win = 0;
+    Annotations app = annotations.where("app", type);
+    if (app.next()) {
+        i32 view = app.fn();
+        win = view(self);
+    }
+    Annotations timers = annotations.where("timer", type);
+    while (timers.next()) {
+        i32 id = send(UiOp::CREATE_TIMER, timers.arg(0), 0, 0, 0, 0, 0, "", "");
+        on(id, UiEventKind::TIMER, timers.fn());
+    }
+    Annotations keys = annotations.where("key", type);
+    while (keys.next()) {
+        i32 token = send(UiOp::CLAIM_KEY, 0, 0, 0, 0, 0, 0, keys.text(0), "");
+        on(token, UiEventKind::KEY, keys.fn());
+    }
+    Annotations opens = annotations.where("open", type);
+    if (opens.next()) { on(0, UiEventKind::OPEN, opens.fn()); }
+    Annotations closes = annotations.where("on_close", type);
+    if (closes.next()) { on(0, UiEventKind::CLOSE, closes.fn()); }
+    g_owner = outer;
+    return win;
+}
+
+void deliver(UiEvent *ev) {
+    i32 key = ev->id;
+    if (ev->kind == UiEventKind::KEY) { key = ev->token; }
+    if (ev->kind == UiEventKind::OPEN) { key = 0; }
+    if (ev->kind == UiEventKind::CLOSE) { key = 0; }
+    i32 fn = lookup(ev->owner, key, ev->kind);
+    i32 outer = g_owner;
+    g_owner = ev->owner;
+    if (fn != 0) {
+        if (ev->kind == UiEventKind::OPEN) {
+            fn(ev->owner, (i32)ev->text);
+        } else {
+            fn(ev->owner, ev->id, ev->arg);
+        }
+    }
+    if (ev->kind == UiEventKind::CLOSE) {
+        // The window is going away: after the app's own on_close, the
+        // instance is done -- drop its handlers and let the OS free it.
+        forget(ev->owner);
+        send(UiOp::EXIT, 0, 0, 0, 0, 0, 0, "", "");
+    }
+    g_owner = outer;
+}
+
+// Deliver every pending event to its handler.
+export void pump() {
+    UiEvent ev;
+    while (uiproto.poll(&ev)) {
+        deliver(&ev);
+    }
+}

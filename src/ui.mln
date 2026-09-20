@@ -1,15 +1,18 @@
 package ui;
 
+import runtime from "runtime.mln";
+import { UiOp } from "protocol.mln";
+
 // The UI an application is allowed to talk to. Apps import this and the
 // element vocabulary (elements.mln, for markup) and nothing else, so the
 // surface an app depends on is this file.
 //
-// This file is the interface: prototypes only, no code. The UI server
-// implements every function under the same package name
-// (system/MyOS/src/ui/ui_server.mln), so `ui.set_text(id, s)` links to its
-// `ui_set_text`. Apps run in the server's address space for now; when they
-// become processes these prototypes grow bodies that send messages, and
-// nothing an app wrote changes (docs/design/os-app-boundaries.md).
+// Each function is one request of the UI protocol (protocol.mln; the
+// table is docs/design/ui-protocol.md), sent as the running instance. The
+// UI server answers it (system/MyOS/src/ui/ui_server.mln). Apps share the
+// server's address space for now, so a request is a call; as processes it
+// is a syscall, and nothing an app wrote changes
+// (docs/design/os-app-boundaries.md).
 //
 // Every argument and result is an i32 or a char*: a node id, a handler, a
 // count, a string. Nothing here takes or returns a struct, an Option or a
@@ -18,68 +21,64 @@ package ui;
 
 // --- text -------------------------------------------------------------------------------------
 
-export void set_text(i32 id, char *s);
-export char* text_of(i32 id);
+export void set_text(i32 id, char *s) { runtime.send(UiOp::SET_TEXT, id, 0, 0, 0, 0, 0, s, ""); }
+export char* text_of(i32 id) { return (char*)runtime.send(UiOp::TEXT_OF, id, 0, 0, 0, 0, 0, "", ""); }
 
 // Labels keep a pointer to their text rather than a copy, so formatted text
 // needs a buffer that outlives the call. set_text_fmt keeps one per label
 // (96 bytes, allocated on first use) and formats `fmt` into it: `%d` takes
 // the next i32 argument, `%s` the next as a char*, `%%` is a percent sign.
-export void set_text_fmt(i32 id, char *fmt, i32 a, i32 b);
+export void set_text_fmt(i32 id, char *fmt, i32 a, i32 b) { runtime.send(UiOp::SET_TEXT_FMT, id, a, b, 0, 0, 0, fmt, ""); }
 
 // --- widgets --------------------------------------------------------------------------------
 
-export bool is_checked(i32 id);
-export void set_checked(i32 id, i32 on);
+export bool is_checked(i32 id) { return runtime.send(UiOp::IS_CHECKED, id, 0, 0, 0, 0, 0, "", "") != 0; }
+export void set_checked(i32 id, i32 on) { runtime.send(UiOp::SET_CHECKED, id, on, 0, 0, 0, 0, "", ""); }
 
-export void input_set(i32 id, char *s);
-export void area_append(i32 id, char *s);
-export void area_clear(i32 id);
-export i32 area_lines(i32 id);
+export void input_set(i32 id, char *s) { runtime.send(UiOp::INPUT_SET, id, 0, 0, 0, 0, 0, s, ""); }
+export void area_append(i32 id, char *s) { runtime.send(UiOp::AREA_APPEND, id, 0, 0, 0, 0, 0, s, ""); }
+export void area_clear(i32 id) { runtime.send(UiOp::AREA_CLEAR, id, 0, 0, 0, 0, 0, "", ""); }
+export i32 area_lines(i32 id) { return runtime.send(UiOp::AREA_LINES, id, 0, 0, 0, 0, 0, "", ""); }
 
-export void list_set_items(i32 id, char *items);
-export i32 list_count(i32 id);
+export void list_set_items(i32 id, char *items) { runtime.send(UiOp::LIST_SET_ITEMS, id, 0, 0, 0, 0, 0, items, ""); }
+export i32 list_count(i32 id) { return runtime.send(UiOp::LIST_COUNT, id, 0, 0, 0, 0, 0, "", ""); }
 
 // Selected row, or -1.
-export i32 list_selected(i32 id);
+export i32 list_selected(i32 id) { return runtime.send(UiOp::LIST_SELECTED, id, 0, 0, 0, 0, 0, "", ""); }
 
 // Copy row `index`'s text into `out` (at most `cap` bytes incl. NUL);
 // returns its length, or -1 for no such row.
-export i32 list_item(i32 id, i32 index, char *out, i32 cap);
+export i32 list_item(i32 id, i32 index, char *out, i32 cap) { return runtime.send(UiOp::LIST_ITEM, id, index, (i32)out, cap, 0, 0, "", ""); }
 
 // --- focus and windows ------------------------------------------------------------------------
 
-export void focus(i32 id);
-export void focus_window(i32 win);
+export void focus(i32 id) { runtime.send(UiOp::FOCUS, id, 0, 0, 0, 0, 0, "", ""); }
+export void focus_window(i32 win) { runtime.send(UiOp::FOCUS_WINDOW, win, 0, 0, 0, 0, 0, "", ""); }
 
 // Close a window the app opened itself (a dialog). The app's own main
 // window is closed by the framework when the user closes it.
-export void close(i32 win);
+export void close(i32 win) { runtime.send(UiOp::CLOSE, win, 0, 0, 0, 0, 0, "", ""); }
 
-export i32 window_of(i32 id);
-export i32 window_x(i32 win);
-export i32 window_y(i32 win);
+export i32 window_of(i32 id) { return runtime.send(UiOp::WINDOW_OF, id, 0, 0, 0, 0, 0, "", ""); }
+export i32 window_x(i32 win) { return runtime.send(UiOp::WINDOW_X, win, 0, 0, 0, 0, 0, "", ""); }
+export i32 window_y(i32 win) { return runtime.send(UiOp::WINDOW_Y, win, 0, 0, 0, 0, 0, "", ""); }
 
 // Mount a tree the app built (a dialog) on the desktop and focus it.
-export void show(i32 win);
+export void show(i32 win) { runtime.send(UiOp::SHOW, win, 0, 0, 0, 0, 0, "", ""); }
 
 // Name a node for automation (dom-tester locators).
-export void test_id(i32 id, char *name);
+export void test_id(i32 id, char *name) { runtime.send(UiOp::TEST_ID, id, 0, 0, 0, 0, 0, name, ""); }
 
 // --- keys ---------------------------------------------------------------------------------------
 
 // Simulate a key on the focused node; `type` 1 = down, 3 = char.
-export void send_key(i32 type, i32 code, i32 mods);
-
-// A raw key filter on one node: i32 handler(owner, id, code | mods << 16),
-// run inline before the widget sees the key; return 1 to claim it.
-export void set_key_filter(i32 id, i32 handler);
+export void send_key(i32 type, i32 code, i32 mods) { runtime.send(UiOp::SEND_KEY, type, code, mods, 0, 0, 0, "", ""); }
 
 // --- colours -----------------------------------------------------------------------------------
 
-export i32 rgb(i32 r, i32 g, i32 b);
+export i32 rgb(i32 r, i32 g, i32 b) { return runtime.send(UiOp::RGB, r, g, b, 0, 0, 0, "", ""); }
 
 // --- other apps ---------------------------------------------------------------------------------
 
 // Hand a path to whichever app declares @open; returns its window or 0.
-export i32 open(char *path);
+export i32 open(char *path) { return runtime.send(UiOp::OPEN, 0, 0, 0, 0, 0, 0, path, ""); }

@@ -1,12 +1,13 @@
 # MyAppFramework — MyOS アプリケーションフレームワーク
 
-アプリがリンクする **SDK**。`src/annotations.mln`（`@app` 等の**宣言**）、`src/ui.mln`
-（アプリが呼べる UI API）、`src/elements.mln`（markup の語彙とデフォルト）の 3 つで、
-どれも**プロトタイプだけ**（コードは出ない）。実装は OS 側にある：`ui` / `elements` は
-UI サーバ（`MyOS/src/ui/ui_server.mln`, `MyOS/src/ui/elements.mln`、同じ package 名で
-link 名を合わせる）、`@app` の意味とライフサイクルはシェル（`MyOS/src/shell/app.mln`）。
+アプリがリンクする **SDK**。`src/annotations.mln`（`@app` 等の**宣言**）、`src/protocol.mln`
+（UI プロトコルのメッセージ表）、`src/ui.mln`（アプリが呼べる UI API）、`src/elements.mln`
+（markup の語彙とデフォルト）、`src/runtime.mln`（ハンドラ表とイベントループ）。`ui` と
+`elements` の 1 関数は 1 要求メッセージで、UI サーバ（`MyOS/src/ui/ui_server.mln`,
+`elements_server.mln`）がそれに答える。`@app` の意味（起動・ウィンドウ管理）はシェル
+（`MyOS/src/shell/app.mln`）、`@timer` / `@key` / `@open` / `@on_close` の意味は `runtime.mln`。
 コンパイラが残したメタデータ表の読み手は MyStdLib（`meta/annotations.mln`）。
-層の全体像は `docs/design/os-app-boundaries.md`。
+層の全体像は `docs/design/os-app-boundaries.md`、メッセージ表は `docs/design/ui-protocol.md`。
 コンパイラは「`@a(x)` を宣言と照合して、モジュールの表に 1 行記録する」ことしか知らない
 （`toolchain/MyLangCompiler/docs/grammar.md` "Attributes and annotations"）。`@app` の
 **意味**と、いつ処理するか（ライフサイクル）は全部このリポジトリにある。
@@ -58,7 +59,9 @@ void (Counter *c) click(i32 id) {
   `gap`、`padding`、`onClick` 等は `elements.mln` のデフォルトが入る。
   `testId="..."` は automation 用の名前。
 - **ハンドラはメソッドを直接渡す** (`onClick={c->click}`)。引数は
-  `()`, `(i32 id)`, `(i32 id, i32 arg)` のどれでもよい。
+  `()`, `(i32 id)`, `(i32 id, i32 arg)` のどれでもよい。関数ポインタはアプリの外へ出ない：
+  `runtime.mln` の表に (ノード id, 種別) → メソッドとして残り、サーバからの CLICK / CHANGE
+  イベントで呼ばれる。
 
 ### メソッド属性
 
@@ -117,20 +120,22 @@ while (apps.next()) {
 
 - **ハンドラ ABI は 1 種類**: `void handler(i32 owner, i32 id, i32 arg)`。
   `owner` はインスタンスのポインタ。呼び出し規約が余分な引数を無視するので、
-  `onClick={c->click}` も `@timer` のメソッドも**メソッドの実体**をそのまま渡す
+  `onClick={c->click}` も `@timer` のメソッドも**メソッドの実体**をそのまま登録する
   （`(Counter *c, i32 id)` に `owner` と `id` が届く）。トランポリンは無い。
-  `dom.set_on_click` 等を直接呼ぶ低レベルコードだけがこの ABI を手書きする。
-- **イベントキュー** (`dom.push_event` / `dom.drain_events`): クリック・変更・
-  タイマは検出した場所で呼ばず、コンポジタが入力処理の後にまとめて実行する
-  （Phase A: 同じタスク上）。別タスクへ移すのが隔離の次の一歩で、その時に DOM
-  ロックが要る。`on_key` フィルタだけは「キーを widget に渡すか」を即決するので
-  インラインのまま。
+- **イベント** (`docs/design/ui-protocol.md`): 所有ノードへのクリック・変更・タイマは
+  `dom.emit` が `UiEvent` としてリング（`ui_events`）に積み、アプリ側の `runtime.pump()` が
+  表を引いてメソッドを呼ぶ。今はコンポジタが `dom.drain_events()` の末尾で in-process の
+  host（`shell/host.mln`）にリングを空にさせている（同じタスク上）。別タスク・別プロセスへ
+  移すのが次の段（MYOS-020）で、その時に DOM ロックが要る。`@key` は「キーを widget に
+  渡すか」を即決する必要があるので、アプリが起動時に CLAIM_KEY で組み合わせを申告し、
+  シェルが照合して KEY イベントにする。
 - **owner**: `Node.owner` は生成時に `dom.g_current_owner` が入る。framework は
   `view()` とハンドラの実行中それをインスタンスに設定するので、アプリが途中で
   作ったダイアログやタイマも同じ owner になり、ウィンドウを閉じると
   `dom.remove_owned(owner)` で一括回収される。
-- **レジストリ** (`MyOS/src/shell/app.mln`): 型名ごとに size / view / single / name / open / on_close /
-  timer 表 / key 表。`"Ctrl+S"` の解釈は `key_spec_matches`。
+- **レジストリ** (`MyOS/src/shell/app.mln`): 型名ごとに size / view / single / name /
+  `@open` の有無。`"Ctrl+S"` の解釈は `key_spec_matches`（claim 表を照合）。タイマ・キー・
+  open・on_close のメソッドはシェルにはなく、アプリの `runtime.start()` が自分の行から登録する。
 - **メタデータ表** (`toolchain/MyStdLib/meta/annotations.mln`): 1 行 8 ワード（名前・関数・
   型名・サイズ・引数数・引数×3）。`section.as_slice<AnnotationRow>("annotations")` で表を
   スライスとして取り、`Annotations` カーソルが名前／型でフィルタしながら歩く。
@@ -160,5 +165,5 @@ python3 system/MyOS/tests/apps_e2e_test.py        # プロセス / エディタ 
 - グローバルの**ポインタ配列**への実行時代入 (`char *g[16]; g[0] = "x";`) は誤コンパイル
   される（要素ストライドの既知バグ）。シェルの `app.mln` は `i32` 配列 + キャストで持っている。
   静的初期化 (`char *g[] = {"a", "b"};`) は `.word` で正しく出る。
-- アプリはまだ UI サーバと同じアドレス空間で動く（`ui.set_text` は link 名で直結、ハンドラは
-  関数ポインタ）。メッセージ化は MYOS-019、プロセス化は MYOS-022。
+- アプリはまだ UI サーバと同じアドレス空間で動く（`uiproto.request` は関数呼び出し、
+  イベントは 1 本のリング）。別タスク化は MYOS-020、プロセス化は MYOS-022。
