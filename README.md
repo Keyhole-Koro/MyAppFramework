@@ -1,20 +1,24 @@
 # MyAppFramework
 
-Application framework for [MyOS](https://github.com/Keyhole-Koro/MyOS), written
-in MyLang. Lives at `system/MyAppFramework` in
-[MyComputer](https://github.com/Keyhole-Koro/MyComputer).
+The SDK a [MyOS](https://github.com/Keyhole-Koro/MyOS) application links
+against, written in MyLang. Lives at `system/MyAppFramework` in
+[MyComputer](https://github.com/Keyhole-Koro/MyComputer). It imports nothing
+from MyOS or MyKernel: every file is an interface (prototypes), implemented on
+the OS side -- the UI server for `ui` / `elements`, the shell
+(`MyOS/src/shell/app.mln`) for what `@app` means. See
+`docs/design/os-app-boundaries.md` in MyComputer for the layers.
 
 | file | what it is |
 | --- | --- |
 | `src/annotations.mln` | `@app`, `@timer`, `@key`, `@open`, `@on_close` -- declared as prototypes `(i32 fn, char *type, i32 size, ...)`, like a Java `@interface`; the compiler records each use as a metadata row |
-| `src/app.mln` | registry of installed apps, instances, launch / single-instance / `ui.open()` routing, timers, shortcuts, window close and owner sweep |
-| `src/ui.mln` | the UI API an app talks to: i32 and `char*` only, so it can become a syscall surface |
+| `src/ui.mln` | the UI API an app talks to: i32 and `char*` only, so it can become a message / syscall surface. Prototypes only; the UI server implements it (`MyOS/src/ui/ui_server.mln`) |
+| `src/elements.mln` | the markup vocabulary (`<Window>`, `<Label>`, ...) with its defaults. Prototypes only; implemented by `MyOS/src/ui/elements.mln` |
 | `docs/APP_FRAMEWORK.md` | how to write an app, and how the framework runs it |
 
 An app:
 
 ```mylang
-import dom_elements from "../ui/dom/dom_elements.mln";
+import elements from "../../../MyAppFramework/src/elements.mln";
 import ui from "../../../MyAppFramework/src/ui.mln";
 import { app, timer } from "../../../MyAppFramework/src/annotations.mln";
 

@@ -1,8 +1,12 @@
 # MyAppFramework — MyOS アプリケーションフレームワーク
 
-`src/annotations.mln`（`@app` 等の**宣言**）、`src/app.mln`（レジストリ・起動・イベント配送）、
-`src/ui.mln`（アプリが呼べる UI API）で成り立つ、デスクトップアプリの書き方とその裏側。
+アプリがリンクする **SDK**。`src/annotations.mln`（`@app` 等の**宣言**）、`src/ui.mln`
+（アプリが呼べる UI API）、`src/elements.mln`（markup の語彙とデフォルト）の 3 つで、
+どれも**プロトタイプだけ**（コードは出ない）。実装は OS 側にある：`ui` / `elements` は
+UI サーバ（`MyOS/src/ui/ui_server.mln`, `MyOS/src/ui/elements.mln`、同じ package 名で
+link 名を合わせる）、`@app` の意味とライフサイクルはシェル（`MyOS/src/shell/app.mln`）。
 コンパイラが残したメタデータ表の読み手は MyStdLib（`meta/annotations.mln`）。
+層の全体像は `docs/design/os-app-boundaries.md`。
 コンパイラは「`@a(x)` を宣言と照合して、モジュールの表に 1 行記録する」ことしか知らない
 （`toolchain/MyLangCompiler/docs/grammar.md` "Attributes and annotations"）。`@app` の
 **意味**と、いつ処理するか（ライフサイクル）は全部このリポジトリにある。
@@ -12,7 +16,7 @@
 ```mylang
 package counter;
 
-import dom_elements from "../ui/dom/dom_elements.mln";                  // markup の要素語彙
+import elements from "../../../MyAppFramework/src/elements.mln";        // markup の要素語彙
 import ui from "../../../MyAppFramework/src/ui.mln";                    // アプリが呼べる UI API
 import { app } from "../../../MyAppFramework/src/annotations.mln";      // 使うアノテーション
 
@@ -51,7 +55,7 @@ void (Counter *c) click(i32 id) {
 - **`ref={c->label}`** はそのノードの id をフィールドに書く。木を歩いて id を
   取り直すコードは要らない。
 - **省略できるプロパティ**: `x`/`y`（親原点）、`w`/`h`、`color`、`bold`、
-  `gap`、`padding`、`onClick` 等は `dom_elements.mln` のデフォルトが入る。
+  `gap`、`padding`、`onClick` 等は `elements.mln` のデフォルトが入る。
   `testId="..."` は automation 用の名前。
 - **ハンドラはメソッドを直接渡す** (`onClick={c->click}`)。引数は
   `()`, `(i32 id)`, `(i32 id, i32 arg)` のどれでもよい。
@@ -71,10 +75,11 @@ void (Counter *c) click(i32 id) {
 
 ## アプリが触れるもの
 
-アプリが import するのは `dom_elements.mln`（markup の解決先。コードからは呼ばない）
-と `app/ui.mln` だけ。`ui` の引数・戻り値は **i32 と char\* のみ**（無しは
-インデックスなら -1、id/ポインタなら 0）で、struct・Option・Node\* は跨がない。
-ユーザープロセスでアプリを動かすとき、この面をそのまま syscall にするため。
+アプリが import するのは `elements.mln`（markup の解決先。コードからは呼ばない）
+と `ui.mln` だけで、どちらも MyAppFramework の中。`ui` の引数・戻り値は **i32 と char\* のみ**
+（無しはインデックスなら -1、id/ポインタなら 0）で、struct・Option・Node\* は跨がない。
+ユーザープロセスでアプリを動かすとき、この面をそのままメッセージ／syscall にするため
+（MYOS-019）。
 
 - テキスト: `set_text`, `text_of`, `set_text_fmt(id, "%d / %s", a, b)`
   （ラベルはポインタを保持するので、書式結果はラベルごとのバッファに置かれる）
@@ -107,7 +112,7 @@ while (apps.next()) {
 ```
 
 `"app"` / `"timer"` / … を型名キーのレジストリ（`register_*`）に振り分ける。順序・検証・
-いつ読むかは `app.mln` が決める。他の framework が自分のアノテーションを同じ表に混ぜても、
+いつ読むかはシェル（`MyOS/src/shell/app.mln`）が決める。他の framework が自分のアノテーションを同じ表に混ぜても、
 頼んでいない名前の行は見えない。仕様は `docs/design/toolchain-collected-sections.md`。
 
 - **ハンドラ ABI は 1 種類**: `void handler(i32 owner, i32 id, i32 arg)`。
@@ -124,7 +129,7 @@ while (apps.next()) {
   `view()` とハンドラの実行中それをインスタンスに設定するので、アプリが途中で
   作ったダイアログやタイマも同じ owner になり、ウィンドウを閉じると
   `dom.remove_owned(owner)` で一括回収される。
-- **レジストリ** (`app.mln`): 型名ごとに size / view / single / name / open / on_close /
+- **レジストリ** (`MyOS/src/shell/app.mln`): 型名ごとに size / view / single / name / open / on_close /
   timer 表 / key 表。`"Ctrl+S"` の解釈は `key_spec_matches`。
 - **メタデータ表** (`toolchain/MyStdLib/meta/annotations.mln`): 1 行 8 ワード（名前・関数・
   型名・サイズ・引数数・引数×3）。`section.as_slice<AnnotationRow>("annotations")` で表を
@@ -153,7 +158,7 @@ python3 system/MyOS/tests/apps_e2e_test.py        # プロセス / エディタ 
 - `@task` は無くした（`scheduler.spawn_task` がタスク引数を取れるようになったら関数を 1 つ足すだけ）。
 - struct のフィールド初期化子 (`i32 step = 1;`) は効かない（生成コードが無い）。view() で入れる。
 - グローバルの**ポインタ配列**への実行時代入 (`char *g[16]; g[0] = "x";`) は誤コンパイル
-  される（要素ストライドの既知バグ）。`app.mln` は `i32` 配列 + キャストで持っている。
+  される（要素ストライドの既知バグ）。シェルの `app.mln` は `i32` 配列 + キャストで持っている。
   静的初期化 (`char *g[] = {"a", "b"};`) は `.word` で正しく出る。
-- リポジトリ間の依存は MyOS/src/apps → MyAppFramework → MyOS/src/ui（UI server）と
-  循環している。UI server を切り出せば解ける（`docs/learn/annotations-and-metaprogramming.md`）。
+- アプリはまだ UI サーバと同じアドレス空間で動く（`ui.set_text` は link 名で直結、ハンドラは
+  関数ポインタ）。メッセージ化は MYOS-019、プロセス化は MYOS-022。
