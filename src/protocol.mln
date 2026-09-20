@@ -7,11 +7,13 @@ package uiproto;
 // and neither imports the other (docs/design/os-app-boundaries.md).
 //
 // Requests are synchronous and return one i32. The two carriers below are
-// prototypes: the OS implements them (MyOS/src/ui/ui_channel.mln). While
-// apps share the server's address space they are a call and a ring buffer;
-// when apps become processes they become syscalls and nothing here changes
-// except that strings are copied across (MYOS-020). The message table is
-// docs/design/ui-protocol.md.
+// prototypes: the OS implements them (MyOS/src/ui/ui_channel.mln) over
+// kernel channels -- a request goes to the UI server's task and the caller
+// sleeps until the reply; events queue up for the app to poll. Nothing an
+// app sends or receives is a pointer the other side must follow except the
+// strings, and those are copied at the boundary once apps are processes
+// (MYOS-022); results that are text (TEXT_COPY, LIST_ITEM) are written into
+// a buffer the app names. The message table is docs/design/ui-protocol.md.
 
 // A request: op, the instance it comes from (nodes created by it are owned
 // by that instance), up to six i32 arguments and up to two strings. Which
@@ -46,7 +48,7 @@ export enum UiOp {
     NONE,
     // ui.mln --- text
     SET_TEXT,          // (id, s0)
-    TEXT_OF,           // (id) -> char*
+    TEXT_COPY,         // (id, a1 = out, a2 = cap) -> len; the text copied into the app's buffer
     SET_TEXT_FMT,      // (id, s0 = fmt, a1, a2)
     // ui.mln --- widgets
     IS_CHECKED,        // (id) -> 0/1
@@ -90,6 +92,7 @@ export enum UiOp {
     APPEND_CHILD,      // (a0 = parent, a1 = child)
     // runtime.mln --- lifecycle
     CLAIM_KEY,         // (s0 = "Ctrl+S") -> token; KEY events carry it
+    MAIN_WINDOW,       // (a0 = win) -- the @app view's window; the shell mounts it
     EXIT,              // () -- the instance finished closing; the OS frees it
 };
 
@@ -109,3 +112,6 @@ export i32 request(UiMsg *m);
 
 // Take the next event for this app; false when there is none.
 export bool poll(UiEvent *out);
+
+// Nothing to do until the next event: give the CPU away for a tick.
+export void idle();

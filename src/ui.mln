@@ -22,7 +22,11 @@ import { UiOp } from "protocol.mln";
 // --- text -------------------------------------------------------------------------------------
 
 export void set_text(i32 id, char *s) { runtime.send(UiOp::SET_TEXT, id, 0, 0, 0, 0, 0, s, ""); }
-export char* text_of(i32 id) { return (char*)runtime.send(UiOp::TEXT_OF, id, 0, 0, 0, 0, 0, "", ""); }
+// The node's text, copied into `out` (at most `cap` bytes incl. NUL);
+// returns its length. The app names the buffer: nothing an app holds
+// points into the server, so a text longer than the buffer is cut, not
+// read past.
+export i32 text_copy(i32 id, char *out, i32 cap) { return runtime.send(UiOp::TEXT_COPY, id, (i32)out, cap, 0, 0, 0, "", ""); }
 
 // Labels keep a pointer to their text rather than a copy, so formatted text
 // needs a buffer that outlives the call. set_text_fmt keeps one per label

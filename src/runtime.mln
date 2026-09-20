@@ -9,9 +9,11 @@ package runtime;
 //   @open / @on_close methods -- all registered here as (owner, id, kind)
 //   -> function, and called from pump() when the matching event arrives.
 //   The server holds no app function pointers.
-// - start(): what an instance does when launched -- run its @app view, set
-//   up its timers and key claims, note its open / close handlers.
-// - pump(): take every pending event and dispatch it.
+// - start(): what an instance does when launched -- run its @app view, tell
+//   the shell its window (MAIN_WINDOW), set up its timers and key claims,
+//   note its open / close handlers.
+// - pump(): take every pending event and dispatch it. run() loops on it:
+//   the app's event loop, on its own task.
 //
 // Handlers are called as fn(owner, id, arg) with owner = the instance, so
 // a method `void (T *self) tick()` or `void (T *self) save(i32 id)` is
@@ -102,6 +104,7 @@ export i32 start(i32 self, char *type) {
     if (app.next()) {
         i32 view = app.fn();
         win = view(self);
+        if (win != 0) { send(UiOp::MAIN_WINDOW, win, 0, 0, 0, 0, 0, "", ""); }
     }
     Annotations timers = annotations.where("timer", type);
     while (timers.next()) {
@@ -150,5 +153,13 @@ export void pump() {
     UiEvent ev;
     while (uiproto.poll(&ev)) {
         deliver(&ev);
+    }
+}
+
+// The app's event loop: pump, then let other tasks run until the next tick.
+export void run() {
+    while (1) {
+        pump();
+        uiproto.idle();
     }
 }

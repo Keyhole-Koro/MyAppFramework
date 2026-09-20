@@ -55,6 +55,8 @@ void (Counter *c) click(i32 id) {
   アドレスを第一引数に渡すので、値レシーバ（move）は使えない（コンパイルエラー）。
 - **`ref={c->label}`** はそのノードの id をフィールドに書く。木を歩いて id を
   取り直すコードは要らない。
+- **テキストはアプリのバッファへ**：`ui.text_copy(id, out, cap)`。サーバの中を指す
+  ポインタは返ってこない（`char g_buf[...]` をモジュール変数に置く）。
 - **省略できるプロパティ**: `x`/`y`（親原点）、`w`/`h`、`color`、`bold`、
   `gap`、`padding`、`onClick` 等は `elements.mln` のデフォルトが入る。
   `testId="..."` は automation 用の名前。
@@ -84,7 +86,7 @@ void (Counter *c) click(i32 id) {
 ユーザープロセスでアプリを動かすとき、この面をそのままメッセージ／syscall にするため
 （MYOS-019）。
 
-- テキスト: `set_text`, `text_of`, `set_text_fmt(id, "%d / %s", a, b)`
+- テキスト: `set_text`, `text_copy(id, out, cap)`, `set_text_fmt(id, "%d / %s", a, b)`
   （ラベルはポインタを保持するので、書式結果はラベルごとのバッファに置かれる）
 - ウィジェット: `is_checked`, `set_checked`, `input_set`, `area_append`,
   `area_clear`, `list_set_items`, `list_selected` (-1), `list_item`
@@ -124,11 +126,11 @@ while (apps.next()) {
   （`(Counter *c, i32 id)` に `owner` と `id` が届く）。トランポリンは無い。
 - **イベント** (`docs/design/ui-protocol.md`): 所有ノードへのクリック・変更・タイマは
   `dom.emit` が `UiEvent` としてリング（`ui_events`）に積み、アプリ側の `runtime.pump()` が
-  表を引いてメソッドを呼ぶ。今はコンポジタが `dom.drain_events()` の末尾で in-process の
-  host（`shell/host.mln`）にリングを空にさせている（同じタスク上）。別タスク・別プロセスへ
-  移すのが次の段（MYOS-020）で、その時に DOM ロックが要る。`@key` は「キーを widget に
-  渡すか」を即決する必要があるので、アプリが起動時に CLAIM_KEY で組み合わせを申告し、
-  シェルが照合して KEY イベントにする。
+  表を引いてメソッドを呼ぶ。アプリのコードは**アプリのタスク**（`shell/host.mln`。プロセス化
+  までの仮の置き場）でしか走らず、要求はカーネルのチャネルで UI サーバのタスクへ渡り、
+  返事が来るまでアプリは sleep する。DOM を触るのはサーバのタスクだけ（automation は
+  `dom.lock` を取って読む）。`@key` は「キーを widget に渡すか」を即決する必要があるので、
+  アプリが起動時に CLAIM_KEY で組み合わせを申告し、シェルが照合して KEY イベントにする。
 - **owner**: `Node.owner` は生成時に `dom.g_current_owner` が入る。framework は
   `view()` とハンドラの実行中それをインスタンスに設定するので、アプリが途中で
   作ったダイアログやタイマも同じ owner になり、ウィンドウを閉じると
@@ -165,5 +167,7 @@ python3 system/MyOS/tests/apps_e2e_test.py        # プロセス / エディタ 
 - グローバルの**ポインタ配列**への実行時代入 (`char *g[16]; g[0] = "x";`) は誤コンパイル
   される（要素ストライドの既知バグ）。シェルの `app.mln` は `i32` 配列 + キャストで持っている。
   静的初期化 (`char *g[] = {"a", "b"};`) は `.word` で正しく出る。
-- アプリはまだ UI サーバと同じアドレス空間で動く（`uiproto.request` は関数呼び出し、
-  イベントは 1 本のリング）。別タスク化は MYOS-020、プロセス化は MYOS-022。
+- アプリはまだ UI サーバと同じアドレス空間で動く（チャネルのメッセージにポインタが
+  そのまま乗る）。プロセス化は MYOS-022。
+- アプリが `fs` などカーネルのモジュールを直接 import している（editor / files / terminal）。
+  プロセス化のときに syscall へ置き換える。
