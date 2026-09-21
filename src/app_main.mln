@@ -5,26 +5,28 @@ package app;
 // row the compiler recorded in this image, starts an instance of that type
 // and runs its event loop until the instance exits.
 //
-// One instance per process: the struct lives here, sized for the largest
-// app; the row says how much of it the type uses.
+// One instance per process, allocated at the size the @app row records
+// (sizeof the receiver type) from the process heap, zeroed.
 
 import runtime from "runtime.mln";
+import { sys_sbrk } from "os_call.masm";
 // The process-side carriers of the UI protocol (OS_CALL syscalls). Nothing
 // here calls them; importing the file is what links them into the image.
 import uiproto from "uiproto.mln";
 import annotations from "../../../toolchain/MyStdLib/meta/annotations.mln";
 import { Annotations } from "../../../toolchain/MyStdLib/meta/annotations.mln";
 
-i32 INSTANCE_MAX = 4096;
-char g_instance[4096];
-
 export i32 main() {
     Annotations rows = annotations.named("app");
     if (!rows.next()) { return 1; }
-    if (rows.size() > INSTANCE_MAX) { return 2; }
+    i32 size = rows.size();
+    if (size < 4) { size = 4; }
+    i32 self = sys_sbrk(size);
+    if (self <= 0) { return 2; }
+    char *p = (char*)self;
     i32 i = 0;
-    while (i < INSTANCE_MAX) { g_instance[i] = (char)0; i++; }
-    runtime.start((i32)(&g_instance[0]), rows.type());
+    while (i < size) { p[i] = (char)0; i++; }
+    runtime.start(self, rows.type());
     runtime.run();
     return 0;
 }

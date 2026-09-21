@@ -5,6 +5,7 @@
 export os_call
 export sys_yield
 export sys_exit
+export sys_sbrk
 
 ; i32 os_call(i32 service, i32 args)  -- Syscall::OS_CALL
 os_call:
@@ -21,5 +22,11 @@ sys_yield:
 ; void sys_exit(i32 code)  -- Syscall::EXIT
 sys_exit:
   movi r1, 1
+  syscall
+  mov pc, lr
+
+; i32 sys_sbrk(i32 increment)  -- Syscall::SBRK: grow the heap; the old break
+sys_sbrk:
+  movi r1, 7
   syscall
   mov pc, lr

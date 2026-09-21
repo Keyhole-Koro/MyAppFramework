@@ -24,6 +24,9 @@ export enum OsService {
     FS_REMOVE,      // (char *path) -> 0 | -error
     FS_DIR_NEXT,    // (args[3] = start, out, cap) -> entry index | -1 at the end | -error
     FS_ENTRY_SIZE,  // (args[1] = idx) -> bytes
+    FS_MKDIR,       // (char *path) -> entry index | -error
+    FS_DIR_NEXT_AT, // (args[4] = char *dir, start, out, cap) -> entry index | -1 at the end | -error
+    FS_IS_DIR,      // (args[1] = idx) -> 1 if the entry is a directory
     // processes (console.mln)
     PROC_SPAWN,     // (args[2] = char *path, node) -> pid | 0; stdout bound to `node` (0: none) before it runs
     PROC_BIND,      // (args[2] = pid, node) -> 0; the process's stdout goes to that TextArea

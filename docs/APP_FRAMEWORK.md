@@ -60,9 +60,9 @@ void (Counter *c) click(i32 id) {
   等（Java の `@interface` 相当。呼ばれない）。コンパイラは使用箇所を宣言と照合して
   メタデータ表に記録し、`app.install()` が起動時に表を読んで意味を与える。
   import していない名前・引数の形が違う使い方はコンパイルエラー。
-- **アプリは `boot/main.mln` が import する。** import されたモジュールがプログラムに入り、
-  各モジュールのメタデータ行（`annotations` 束ねセクション）を**リンカ**が 1 本の表に
-  連結する。framework はアプリを知らない。将来はアプリを
+- **アプリはディスク上の実行形式。** `qa/runners/build_user_apps.py` が各 `.dom.mln` を SDK と
+  リンクして `.mbin` にし、mkfs が `/apps` に置く。シェルは起動時に `/apps` の各ファイルの
+  ヘッダから `@app` 行を読む。framework も image もアプリを知らない。将来はアプリを
   MFS 上の .mbin にしてローダが表を読む形にする予定（main.mln の TODO）。
 - **レシーバはポインタか参照** (`Counter *c` / `ref mut Counter c`)。framework はインスタンスの
   アドレスを第一引数に渡すので、値レシーバ（move）は使えない（コンパイルエラー）。
@@ -170,8 +170,8 @@ python3 system/MyOS/tests/apps_e2e_test.py        # プロセス / エディタ 
 
 ## 既知の制限
 
-- ノード id は再利用されず 256 で尽きる（`dom.mln`）。アプリの起動・終了を
-  繰り返すと `dom: out of node ids` で止まる。
+- 1 アプリ（プロセス）が持てるノードは 96 まで（`dom.NODES_PER_OWNER`）。超えると要素は
+  id 0 で返る（描かれない）。id は閉じたウィンドウのものから再利用される。
 - `f->items[0]` のように、ポインタ経由の配列フィールドは添字できない。
   バッファはモジュール変数か heap に置く（`files.dom.mln` 参照）。
 - `Result<Option<i32>, E>` を値の case で受ける (`Ok(v) -> v`) と struct が
@@ -181,7 +181,7 @@ python3 system/MyOS/tests/apps_e2e_test.py        # プロセス / エディタ 
 - グローバルの**ポインタ配列**への実行時代入 (`char *g[16]; g[0] = "x";`) は誤コンパイル
   される（要素ストライドの既知バグ）。シェルの `app.mln` は `i32` 配列 + キャストで持っている。
   静的初期化 (`char *g[] = {"a", "b"};`) は `.word` で正しく出る。
-- 1 プロセス 1 インスタンス（`app_main.mln` の 4 KiB の struct 領域）。`@app(single)` は
+- 1 プロセス 1 インスタンス（`app_main.mln` が `sizeof` の分だけ `sbrk` で取る）。`@app(single)` は
   シェルが 2 回目の起動を既存プロセスへ向けることで実現する。
 - プロセスのスタックは 16 KiB、ヒープ（`sbrk`）は SDK からは使っていない。大きなバッファは
   モジュール変数に置く（editor の `g_save_text[4096]`）。
