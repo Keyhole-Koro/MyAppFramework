@@ -22,7 +22,6 @@ export enum OsService {
     FS_SEEK,        // (args[3] = fd, offset, whence) -> position | -error
     FS_CLOSE,       // (args[1] = fd) -> 0
     FS_REMOVE,      // (char *path) -> 0 | -error
-    FS_DIR_NEXT,    // (args[3] = start, out, cap) -> entry index | -1 at the end | -error
     FS_ENTRY_SIZE,  // (args[1] = idx) -> bytes
     FS_MKDIR,       // (char *path) -> entry index | -error
     FS_DIR_NEXT_AT, // (args[4] = char *dir, start, out, cap) -> entry index | -1 at the end | -error

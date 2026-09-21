@@ -80,17 +80,6 @@ export Result<_, FsError> remove(char *path) {
     return Ok(_);
 }
 
-// The next entry at or after `start`: Some(index) with its name copied
-// into `out`, None past the last one.
-export Result<Option<i32>, FsError> dir_next(i32 start, char *out, i32 cap) {
-    i32 a[3];
-    a[0] = start; a[1] = (i32)out; a[2] = cap;
-    i32 r = os_call(OsService::FS_DIR_NEXT, (i32)(&a[0]));
-    if (r == -1) { return Ok(None); }
-    if (r < 0) { return Err(error_of(0 - r)); }
-    return Ok(Some(r));
-}
-
 // A new directory; its entry index.
 export Result<i32, FsError> mkdir(char *path) {
     return result_of(os_call(OsService::FS_MKDIR, (i32)path));
