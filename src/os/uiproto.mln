@@ -7,9 +7,9 @@ package uiproto;
 // the process. Everything the message names by pointer is copied by the
 // OS at the boundary.
 
-import { os_call, sys_yield, sys_exit } from "os_call.masm";
-import { OsService } from "os_services.mln";
-import { UiMsg, UiEvent } from "protocol.mln";
+import { os_call, sys_yield, sys_exit } from "syscall.masm";
+import { OsService } from "../protocol/services.mln";
+import { UiMsg, UiEvent } from "../protocol/ui.mln";
 
 char g_event_text[64];   // an event's string payload, copied in by UI_POLL
 

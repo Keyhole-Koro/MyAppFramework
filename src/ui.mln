@@ -1,8 +1,8 @@
 package ui;
 
-import runtime from "runtime.mln";
+import runtime from "runtime/runtime.mln";
 import strbuf from "../../../toolchain/MyStdLib/text/strbuf.mln";
-import { UiOp } from "protocol.mln";
+import { UiOp } from "protocol/ui.mln";
 
 // The UI an application is allowed to talk to. Apps import this and the
 // element vocabulary (elements.mln, for markup) and nothing else, so the

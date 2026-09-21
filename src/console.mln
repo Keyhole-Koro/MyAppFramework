@@ -5,8 +5,8 @@ package console;
 // line of stdin, notice its exit and reap it. Each is an OS_CALL
 // (os_services.mln) answered by MyOS's proc/console.mln.
 
-import { os_call } from "os_call.masm";
-import { OsService } from "os_services.mln";
+import { os_call } from "os/syscall.masm";
+import { OsService } from "protocol/services.mln";
 
 // Start the executable at `path`; its pid, or 0.
 export i32 spawn_file(char *path) {

@@ -19,12 +19,12 @@ package runtime;
 // a method `void (T *self) tick()` or `void (T *self) save(i32 id)` is
 // passed as is (the calling convention ignores trailing arguments).
 
-import uiproto from "protocol.mln";
-import { UiMsg, UiEvent, UiOp, UiEventKind } from "protocol.mln";
-import { os_call } from "os_call.masm";
-import { OsService } from "os_services.mln";
-import annotations from "../../../toolchain/MyStdLib/meta/annotations.mln";
-import { Annotations } from "../../../toolchain/MyStdLib/meta/annotations.mln";
+import uiproto from "../protocol/ui.mln";
+import { UiMsg, UiEvent, UiOp, UiEventKind } from "../protocol/ui.mln";
+import { os_call } from "../os/syscall.masm";
+import { OsService } from "../protocol/services.mln";
+import annotations from "../../../../toolchain/MyStdLib/meta/annotations.mln";
+import { Annotations } from "../../../../toolchain/MyStdLib/meta/annotations.mln";
 
 // The instance this process runs (one per process): handlers get it as
 // their receiver. Requests carry it as `owner` too, but the OS replaces

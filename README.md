@@ -10,15 +10,22 @@ MyOS or MyKernel. It reaches the OS only through the `OS_CALL` syscall
 through events. See `docs/design/os-app-boundaries.md` in MyComputer for
 the layers and `docs/design/ui-protocol.md` for the message table.
 
+Three kinds of file, by who imports them:
+
+- `src/*.mln` -- the **app-facing API**: what a `.dom.mln` imports
+- `src/protocol/` -- the **contract** shared with the OS: the only files MyOS imports from here
+- `src/os/`, `src/runtime/` -- SDK internals: how a request reaches the OS, and the app's event loop
+
 | file | what it is |
 | --- | --- |
 | `src/annotations.mln` | `@app`, `@timer`, `@key`, `@open`, `@on_close` -- declared as prototypes `(i32 fn, char *type, i32 size, ...)`, like a Java `@interface`; the compiler records each use as a metadata row |
-| `src/protocol.mln` | the UI protocol: `UiMsg` / `UiEvent`, the op and event tables (`docs/design/ui-protocol.md`); both sides import it |
+| `src/protocol/ui.mln` | the UI protocol: `UiMsg` / `UiEvent`, the op and event tables (`docs/design/ui-protocol.md`) and the prototypes of its carriers; both sides import it |
+| `src/protocol/services.mln` | the `OS_CALL` service numbers (`OsService`) and error codes the OS handler (`MyOS/src/proc/os_calls.mln`) shares |
 | `src/ui.mln` | the UI API an app talks to: i32 and `char*` only. Each function is one request; the UI server answers it (`MyOS/src/ui/ui_server.mln`) |
 | `src/elements.mln` | the markup vocabulary (`<Window>`, `<Label>`, ...) with its defaults; each is one CREATE_* request (`MyOS/src/ui/elements_server.mln`). Handlers stay in the app |
-| `src/uiproto.mln`, `src/os_call.masm`, `src/os_services.mln` | the carriers of the protocol as `OS_CALL` syscalls, the syscall stub, and the service numbers the OS handler (`MyOS/src/proc/os_calls.mln`) shares |
-| `src/runtime.mln` | the app side: handler table, `start()` (runs the @app view, sets up @timer / @key / @open / @on_close from the app's own annotation rows), `run()` (the event loop), `log()` |
-| `src/app_main.mln` | the process entry: finds the @app row in the image, starts the instance, runs the loop |
+| `src/os/syscall.masm`, `src/os/uiproto.mln` | the syscall stubs (`os_call`, `sys_yield`, `sys_exit`, `sys_sbrk`) and the UI carriers on top of them (`request` / `poll` / `idle` / `exit`) |
+| `src/runtime/runtime.mln` | the app side: handler table, `start()` (runs the @app view, sets up @timer / @key / @open / @on_close from the app's own annotation rows), `run()` (the event loop), `log()` |
+| `src/runtime/app_main.mln` | the process entry: finds the @app row in the image, starts the instance, runs the loop |
 | `src/fs.mln`, `src/console.mln` | files and other processes, as `FS_*` / `PROC_*` services |
 | `docs/APP_FRAMEWORK.md` | how to write an app, and how the framework runs it |
 

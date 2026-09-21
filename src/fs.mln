@@ -5,9 +5,9 @@ package fs;
 // answers by calling its own fs.mln. Buffers and paths are the app's; the
 // OS reads and writes them through the process's page tables.
 
-import { os_call } from "os_call.masm";
-import { OsService } from "os_services.mln";
-import os_services from "os_services.mln";
+import { os_call } from "os/syscall.masm";
+import { OsService } from "protocol/services.mln";
+import os_services from "protocol/services.mln";
 import { Result } from "../../../toolchain/MyStdLib/result.mln";
 import { Option } from "../../../toolchain/MyStdLib/option.mln";
 

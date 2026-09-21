@@ -3,17 +3,20 @@
 アプリがリンクする **SDK**。アプリは 1 本の実行形式（`.mbin`、プロセス）で、リンクするのは
 この SDK と MyStdLib だけ：
 
+import する側で 3 つに分かれる：`src/*.mln` はアプリが import する面、`src/protocol/` は OS と
+共有する契約（MyOS が import するのはここだけ）、`src/os/` と `src/runtime/` は SDK の内側。
+
 | ファイル | 役割 |
 | --- | --- |
 | `src/annotations.mln` | `@app` / `@timer` / `@key` / `@open` / `@on_close` の**宣言** |
-| `src/protocol.mln` | UI プロトコル：`UiMsg` / `UiEvent`、要求とイベントの表、運び手の宣言 |
-| `src/uiproto.mln` | 運び手の実装：`request` / `poll` / `idle` / `exit` = `OS_CALL` syscall |
+| `src/protocol/ui.mln` | UI プロトコル：`UiMsg` / `UiEvent`、要求とイベントの表、運び手の宣言 |
+| `src/protocol/services.mln` | `OS_CALL` のサービス番号（`OsService`）とエラーコード |
+| `src/os/syscall.masm`, `src/os/uiproto.mln` | syscall スタブと、その上の運び手の実装：`request` / `poll` / `idle` / `exit` |
 | `src/ui.mln` | アプリが呼べる UI API（1 関数 = 1 要求） |
 | `src/elements.mln` | markup の語彙とデフォルト（`<Window>` … = CREATE_\* 要求） |
-| `src/runtime.mln` | ハンドラ表、`start()`（`@app` の view を呼び、`@timer` / `@key` / `@open` / `@on_close` を登録）、`run()`（イベントループ）、`log()` |
-| `src/app_main.mln` | プロセスのエントリ：この image の `@app` 行を見つけて `start` → `run` |
+| `src/runtime/runtime.mln` | ハンドラ表、`start()`（`@app` の view を呼び、`@timer` / `@key` / `@open` / `@on_close` を登録）、`run()`（イベントループ）、`log()` |
+| `src/runtime/app_main.mln` | プロセスのエントリ：この image の `@app` 行を見つけて `start` → `run` |
 | `src/fs.mln`, `src/console.mln` | ファイルと他プロセス（`OS_CALL` の `FS_*` / `PROC_*`） |
-| `src/os_services.mln`, `src/os_call.masm` | サービス番号と syscall スタブ |
 
 UI サーバ（`MyOS/src/ui/ui_server.mln`, `elements_server.mln`）が要求に答え、`@app` の意味
 （インストール・起動・ウィンドウ管理・終了）はシェル（`MyOS/src/shell/app.mln`）。

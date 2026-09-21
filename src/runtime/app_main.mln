@@ -9,12 +9,12 @@ package app;
 // (sizeof the receiver type) from the process heap, zeroed.
 
 import runtime from "runtime.mln";
-import { sys_sbrk } from "os_call.masm";
+import { sys_sbrk } from "../os/syscall.masm";
 // The process-side carriers of the UI protocol (OS_CALL syscalls). Nothing
 // here calls them; importing the file is what links them into the image.
-import uiproto from "uiproto.mln";
-import annotations from "../../../toolchain/MyStdLib/meta/annotations.mln";
-import { Annotations } from "../../../toolchain/MyStdLib/meta/annotations.mln";
+import uiproto from "../os/uiproto.mln";
+import annotations from "../../../../toolchain/MyStdLib/meta/annotations.mln";
+import { Annotations } from "../../../../toolchain/MyStdLib/meta/annotations.mln";
 
 export i32 main() {
     Annotations rows = annotations.named("app");
