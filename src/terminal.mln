@@ -1,0 +1,33 @@
+package terminal;
+
+// MyAppFramework's UI-specific process integration: route a child process's
+// stdout to one of this app's TextAreas. Generic process control lives in
+// MyStdLib/hosted/process.mln.
+
+import { os_call } from "../../../toolchain/MyStdLib/platform/myos/syscall.masm";
+import { OsService } from "../../../contracts/myos/services.contract.mln";
+import { Result } from "../../../toolchain/MyStdLib/result.mln";
+import { SpawnError } from "../../../contracts/process/spawn.contract.mln";
+import { ProcSpawnArgs, ProcBindArgs, ProcUnbindArgs } from "../../../contracts/myos/process-args.contract.mln";
+
+// Start it with its stdout already going to TextArea `node` (one of
+// ours): bound before it runs, so its first output cannot slip past.
+export Result<i32, SpawnError> spawn_bound(char *path, i32 node) {
+    Result<i32, SpawnError> result;
+    ProcSpawnArgs<Result<i32, SpawnError>> args = ProcSpawnArgs<Result<i32, SpawnError>> {
+        path: path, stdout_node: node, result_out: &result
+    };
+    os_call(OsService::PROC_SPAWN, (i32)(&args));
+    return result;
+}
+
+// Send the process's stdout to TextArea `node` (one of ours).
+export void bind(i32 pid, i32 node) {
+    ProcBindArgs args = ProcBindArgs { pid: pid, output_node: node };
+    os_call(OsService::PROC_BIND, (i32)(&args));
+}
+
+export void unbind(i32 pid) {
+    ProcUnbindArgs args = ProcUnbindArgs { pid: pid };
+    os_call(OsService::PROC_UNBIND, (i32)(&args));
+}

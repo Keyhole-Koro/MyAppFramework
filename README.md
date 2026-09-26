@@ -10,23 +10,32 @@ MyOS or MyKernel. It reaches the OS only through the `OS_CALL` syscall
 through events. See `docs/design/os-app-boundaries.md` in MyComputer for
 the layers and `docs/design/ui-protocol.md` for the message table.
 
-Three kinds of file, by who imports them:
+Two kinds of framework file, by who imports them:
 
 - `src/*.mln` -- the **app-facing API**: what a `.dom.mln` imports
-- `src/protocol/` -- the **contract** shared with the OS: the only files MyOS imports from here
-- `src/os/`, `src/runtime/` -- SDK internals: how a request reaches the OS, and the app's event loop
+- `src/runtime/` -- SDK internals: request transport and the app's event loop
+
+The shared application contract lives at MyComputer's root `contracts/myapp/`;
+both this SDK and MyOS consume it, and neither owns it. MyAppFramework never
+imports MyOS or MyKernel, and MyOS never imports MyAppFramework. Application
+sources import the app-facing files directly under `src/`, never `src/runtime/`
+or the wire contracts directly.
+Generic filesystem, process and logging APIs live in MyStdLib's `hosted/`
+layer; shared service identifiers and filesystem semantics live under
+`contracts/`.
 
 | file | what it is |
 | --- | --- |
 | `src/annotations.mln` | `@app`, `@timer`, `@key`, `@open`, `@on_close` -- declared as prototypes `(i32 fn, char *type, i32 size, ...)`, like a Java `@interface`; the compiler records each use as a metadata row |
-| `src/protocol/ui.mln` | the UI protocol: `UiMsg` / `UiEvent`, the op and event tables (`docs/design/ui-protocol.md`) and the prototypes of its carriers; both sides import it |
-| `src/protocol/services.mln` | the `OS_CALL` service numbers (`OsService`) and error codes the OS handler (`MyOS/src/proc/os_calls.mln`) shares |
-| `src/ui.mln` | the UI API an app talks to: i32 and `char*` only. Each function is one request; the UI server answers it (`MyOS/src/ui/ui_server.mln`) |
-| `src/elements.mln` | the markup vocabulary (`<Window>`, `<Label>`, ...) with its defaults; each is one CREATE_* request (`MyOS/src/ui/elements_server.mln`). Handlers stay in the app |
-| `src/os/syscall.masm`, `src/os/uiproto.mln` | the syscall stubs (`os_call`, `sys_yield`, `sys_exit`, `sys_sbrk`) and the UI carriers on top of them (`request` / `poll` / `idle` / `exit`) |
+| `../../contracts/myapp/message.contract.mln` | domain-tagged `Request`, `Event` / `EventKind` data contract |
+| `../../contracts/myapp/ui.contract.mln` | UI-only operation table (`UiOp`) |
+| `../../contracts/myapp/lifecycle.contract.mln` | app-host operations (`AppOp`: open, key claim, main window, exit) |
+| `src/ui.mln` | the UI API an app talks to; the MyOS UI protocol endpoint answers it |
+| `src/elements.mln` | the markup vocabulary (`<Window>`, `<Label>`, ...) and handler registration |
+| `src/runtime/transport.mln` | `Request` / `Event` carriers on top of MyStdLib's MyOS syscall binding |
 | `src/runtime/runtime.mln` | the app side: handler table, `start()` (runs the @app view, sets up @timer / @key / @open / @on_close from the app's own annotation rows), `run()` (the event loop), `log()` |
 | `src/runtime/app_main.mln` | the process entry: finds the @app row in the image, starts the instance, runs the loop |
-| `src/fs.mln`, `src/console.mln` | files and other processes, as `FS_*` / `PROC_*` services |
+| `src/terminal.mln` | UI-specific child stdout ↔ TextArea binding; generic process control is MyStdLib |
 | `docs/APP_FRAMEWORK.md` | how to write an app, and how the framework runs it |
 
 An app:
@@ -55,11 +64,10 @@ void (Counter *c) click(i32 id) {
 The compiler knows nothing about apps: `@app` on `view` becomes the row
 `["app", Counter__view, "Counter", sizeof(Counter), ...]` in the module's
 metadata table (`toolchain/MyLangCompiler/docs/grammar.md`, "Attributes and
-annotations"). At boot `app.install()` walks the rows with MyStdLib's
-iterator (`annotations.named("app")`, `it.next()`, `it.fn()`, ...;
-`toolchain/MyStdLib/meta/annotations.mln`) and decides what they mean -- the
-lifecycle is the framework's. The linker lays every module's rows out as one
-section (`docs/design/toolchain-collected-sections.md`); MyOS's
-`boot/main.mln` only imports the apps so they are part of the program.
+annotations"). MyStdLib only exposes the rows as data. The SDK runtime reads
+the current process's rows to start its view and handlers; MyOS reads the same
+rows from `/apps/*.mbin` to discover, launch, and reap installed applications.
+The linker lays each executable's rows out as one section
+(`docs/design/toolchain-collected-sections.md`).
 
-Tests: `make framework-test` in MyComputer.
+Tests: `make qa-boundaries` and `make framework-test` in MyComputer.

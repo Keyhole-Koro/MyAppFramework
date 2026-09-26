@@ -2,23 +2,24 @@ package ui;
 
 import runtime from "runtime/runtime.mln";
 import strbuf from "../../../toolchain/MyStdLib/text/strbuf.mln";
-import { UiOp } from "protocol/ui.mln";
+import { Option } from "../../../toolchain/MyStdLib/option.mln";
+import { Result } from "../../../toolchain/MyStdLib/result.mln";
+import { UiError } from "../../../contracts/ui/widget.contract.mln";
+import { UiOp } from "../../../contracts/myapp/ui.contract.mln";
+import { AppOp } from "../../../contracts/myapp/lifecycle.contract.mln";
 
 // The UI an application is allowed to talk to. Apps import this and the
 // element vocabulary (elements.mln, for markup) and nothing else, so the
 // surface an app depends on is this file.
 //
-// Each function is one request of the UI protocol (protocol.mln; the
+// Each function is one request of the UI contract (contracts/myapp; the
 // table is docs/design/ui-protocol.md), sent as the running instance. The
-// UI server answers it (system/MyOS/src/ui/ui_server.mln). Apps share the
-// server's address space for now, so a request is a call; as processes it
-// is a syscall, and nothing an app wrote changes
-// (docs/design/os-app-boundaries.md).
+// UI protocol endpoint answers it (system/MyOS/src/ui/protocol.mln) after the
+// request crosses OS_CALL and the service channel.
 //
-// Every argument and result is an i32 or a char*: a node id, a handler, a
-// count, a string. Nothing here takes or returns a struct, an Option or a
-// Node pointer. That is deliberate -- this is the shape a message or a
-// syscall can carry. "Absent" is -1 for indexes and 0 for ids and pointers.
+// Arguments on the wire are words and copied buffers. Semantic return values
+// use Result / Option where absence and failure differ; the gateway copies
+// those data-only contract values back without exposing a server pointer.
 
 // --- text -------------------------------------------------------------------------------------
 
@@ -82,12 +83,28 @@ export i32 area_lines(i32 id) { return runtime.send(UiOp::AREA_LINES, id, 0, 0, 
 export void list_set_items(i32 id, char *items) { runtime.send(UiOp::LIST_SET_ITEMS, id, 0, 0, 0, 0, 0, items, ""); }
 export i32 list_count(i32 id) { return runtime.send(UiOp::LIST_COUNT, id, 0, 0, 0, 0, 0, "", ""); }
 
-// Selected row, or -1.
-export i32 list_selected(i32 id) { return runtime.send(UiOp::LIST_SELECTED, id, 0, 0, 0, 0, 0, "", ""); }
+// A missing selection is Ok(None); an invalid node is Err(UiError).
+export Result<Option<i32>, UiError> list_selected(i32 id) {
+    Result<Option<i32>, UiError> result = Err(UiError::NodeNotFound(id));
+    runtime.send_result(
+        UiOp::LIST_SELECTED,
+        id, 0, 0, 0, 0, 0, "", "",
+        (i32)(&result), sizeof(Result<Option<i32>, UiError>)
+    );
+    return result;
+}
 
 // Copy row `index`'s text into `out` (at most `cap` bytes incl. NUL);
-// returns its length, or -1 for no such row.
-export i32 list_item(i32 id, i32 index, char *out, i32 cap) { return runtime.send(UiOp::LIST_ITEM, id, index, (i32)out, cap, 0, 0, "", ""); }
+// returns its length or a typed UI error.
+export Result<i32, UiError> list_item(i32 id, i32 index, char *out, i32 cap) {
+    Result<i32, UiError> result = Err(UiError::InvalidIndex(index));
+    runtime.send_result(
+        UiOp::LIST_ITEM,
+        id, index, (i32)out, cap, 0, 0, "", "",
+        (i32)(&result), sizeof(Result<i32, UiError>)
+    );
+    return result;
+}
 
 // --- focus and windows ------------------------------------------------------------------------
 
@@ -98,9 +115,26 @@ export void focus_window(i32 win) { runtime.send(UiOp::FOCUS_WINDOW, win, 0, 0, 
 // window is closed by the framework when the user closes it.
 export void close(i32 win) { runtime.send(UiOp::CLOSE, win, 0, 0, 0, 0, 0, "", ""); }
 
-export i32 window_of(i32 id) { return runtime.send(UiOp::WINDOW_OF, id, 0, 0, 0, 0, 0, "", ""); }
-export i32 window_x(i32 win) { return runtime.send(UiOp::WINDOW_X, win, 0, 0, 0, 0, 0, "", ""); }
-export i32 window_y(i32 win) { return runtime.send(UiOp::WINDOW_Y, win, 0, 0, 0, 0, 0, "", ""); }
+export Result<Option<i32>, UiError> window_of(i32 id) {
+    Result<Option<i32>, UiError> result = Err(UiError::NodeNotFound(id));
+    runtime.send_result(UiOp::WINDOW_OF, id, 0, 0, 0, 0, 0, "", "",
+                        (i32)(&result), sizeof(Result<Option<i32>, UiError>));
+    return result;
+}
+
+export Result<i32, UiError> window_x(i32 win) {
+    Result<i32, UiError> result = Err(UiError::NodeNotFound(win));
+    runtime.send_result(UiOp::WINDOW_X, win, 0, 0, 0, 0, 0, "", "",
+                        (i32)(&result), sizeof(Result<i32, UiError>));
+    return result;
+}
+
+export Result<i32, UiError> window_y(i32 win) {
+    Result<i32, UiError> result = Err(UiError::NodeNotFound(win));
+    runtime.send_result(UiOp::WINDOW_Y, win, 0, 0, 0, 0, 0, "", "",
+                        (i32)(&result), sizeof(Result<i32, UiError>));
+    return result;
+}
 
 // Mount a tree the app built (a dialog) on the desktop and focus it.
 export void show(i32 win) { runtime.send(UiOp::SHOW, win, 0, 0, 0, 0, 0, "", ""); }
@@ -120,4 +154,4 @@ export i32 rgb(i32 r, i32 g, i32 b) { return runtime.send(UiOp::RGB, r, g, b, 0,
 // --- other apps ---------------------------------------------------------------------------------
 
 // Hand a path to whichever app declares @open; returns its window or 0.
-export i32 open(char *path) { return runtime.send(UiOp::OPEN, 0, 0, 0, 0, 0, 0, path, ""); }
+export i32 open(char *path) { return runtime.app_send(AppOp::OPEN, 0, path); }

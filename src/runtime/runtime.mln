@@ -2,7 +2,7 @@ package runtime;
 
 // The application side of the framework: what runs inside an app process
 // to turn its annotations and markup handlers into behaviour. The OS never
-// calls into it -- it only sends events (protocol.mln); app_main.mln
+// calls into it -- it only sends events (contracts/myapp/message.contract.mln); app_main.mln
 // starts it.
 //
 // - The handler table: `onClick={c->click}` in markup, @timer / @key /
@@ -19,58 +19,74 @@ package runtime;
 // a method `void (T *self) tick()` or `void (T *self) save(i32 id)` is
 // passed as is (the calling convention ignores trailing arguments).
 
-import uiproto from "../protocol/ui.mln";
-import { UiMsg, UiEvent, UiOp, UiEventKind } from "../protocol/ui.mln";
-import { os_call } from "../os/syscall.masm";
-import { OsService } from "../protocol/services.mln";
+import app_transport from "transport.mln";
+import { Request, RequestDomain, Event, EventKind } from "../../../../contracts/myapp/message.contract.mln";
+import { UiOp } from "../../../../contracts/myapp/ui.contract.mln";
+import { AppOp } from "../../../../contracts/myapp/lifecycle.contract.mln";
+import hosted_log from "../../../../toolchain/MyStdLib/hosted/log.mln";
 import annotations from "../../../../toolchain/MyStdLib/meta/annotations.mln";
 import { Annotations } from "../../../../toolchain/MyStdLib/meta/annotations.mln";
+import { UiError } from "../../../../contracts/ui/widget.contract.mln";
+import { Result } from "../../../../toolchain/MyStdLib/result.mln";
 
 // The instance this process runs (one per process): handlers get it as
 // their receiver. Requests carry it as `owner` too, but the OS replaces
 // that with the pid -- to the server, the owner of everything this process
 // creates is the process -- and events name that pid, not this pointer.
-i32 g_owner = 0;
+i32 current_owner = 0;
 
-export i32 owner() { return g_owner; }
+export i32 owner() { return current_owner; }
 
 // A line on the OS's debug console, for an app's own diagnostics.
 export void log(char *line) {
-    os_call(OsService::LOG, (i32)line);
+    hosted_log.write(line);
+}
+
+// JSX construction is atomic from an application's point of view: a partial
+// tree is not useful. Typed element calls expose UiError to ordinary callers;
+// markup uses this terminal policy and ends the process on construction
+// failure instead of inventing node id 0.
+export void fail_ui(UiError error) {
+    log("UI construction failed");
+    app_transport.exit();
+    while (1) { app_transport.idle(); }
 }
 
 // --- handler table ---------------------------------------------------------------------
 
 i32 HANDLERS_MAX = 256;
-i32 g_h_owner[256];
-i32 g_h_key[256];    // node id, KEY claim token, or 0 for OPEN / CLOSE
-i32 g_h_kind[256];
-i32 g_h_fn[256];
-i32 g_h_count = 0;
+struct Handler {
+    i32 owner;
+    i32 key;           // node id, KEY claim token, or 0 for OPEN / CLOSE
+    i32 kind;
+    i32 fn;
+};
+Handler handlers[256];
+i32 handler_count = 0;
 
 // Register fn for (key, kind) on the current instance.
 export void on(i32 key, i32 kind, i32 fn) {
     if (fn == 0) { return; }
     i32 i = 0;
-    while (i < g_h_count) {
-        if (g_h_fn[i] == 0) { break; }
+    while (i < handler_count) {
+        if (handlers[i].fn == 0) { break; }
         i++;
     }
-    if (i == g_h_count) {
-        if (g_h_count >= HANDLERS_MAX) { return; }
-        g_h_count++;
+    if (i == handler_count) {
+        if (handler_count >= HANDLERS_MAX) { return; }
+        handler_count++;
     }
-    g_h_owner[i] = g_owner;
-    g_h_key[i] = key;
-    g_h_kind[i] = kind;
-    g_h_fn[i] = fn;
+    handlers[i].owner = current_owner;
+    handlers[i].key = key;
+    handlers[i].kind = kind;
+    handlers[i].fn = fn;
 }
 
 i32 lookup(i32 owner, i32 key, i32 kind) {
     i32 i = 0;
-    while (i < g_h_count) {
-        if (g_h_fn[i] != 0 && g_h_owner[i] == owner && g_h_key[i] == key && g_h_kind[i] == kind) {
-            return g_h_fn[i];
+    while (i < handler_count) {
+        if (handlers[i].fn != 0 && handlers[i].owner == owner && handlers[i].key == key && handlers[i].kind == kind) {
+            return handlers[i].fn;
         }
         i++;
     }
@@ -79,23 +95,42 @@ i32 lookup(i32 owner, i32 key, i32 kind) {
 
 void forget(i32 owner) {
     i32 i = 0;
-    while (i < g_h_count) {
-        if (g_h_owner[i] == owner) { g_h_fn[i] = 0; }
+    while (i < handler_count) {
+        if (handlers[i].owner == owner) { handlers[i].fn = 0; }
         i++;
     }
 }
 
 // --- requests ------------------------------------------------------------------------------
 
-// Build and send one request as the current instance.
-export i32 send(i32 op, i32 a0, i32 a1, i32 a2, i32 a3, i32 a4, i32 a5, char *s0, char *s1) {
-    UiMsg m;
+// Build and send one domain request as the current instance.
+i32 send_domain_result(i32 domain, i32 op, i32 a0, i32 a1, i32 a2, i32 a3, i32 a4, i32 a5, char *s0, char *s1, i32 result_out, i32 result_size) {
+    Request m;
+    m.domain = domain;
     m.op = op;
-    m.owner = g_owner;
+    m.owner = current_owner;
     m.a0 = a0; m.a1 = a1; m.a2 = a2; m.a3 = a3; m.a4 = a4; m.a5 = a5;
     m.s0 = s0;
     m.s1 = s1;
-    return uiproto.request(&m);
+    m.result_out = result_out;
+    m.result_size = result_size;
+    return app_transport.request(&m);
+}
+
+i32 send_domain(i32 domain, i32 op, i32 a0, i32 a1, i32 a2, i32 a3, i32 a4, i32 a5, char *s0, char *s1) {
+    return send_domain_result(domain, op, a0, a1, a2, a3, a4, a5, s0, s1, 0, 0);
+}
+
+export i32 send(i32 op, i32 a0, i32 a1, i32 a2, i32 a3, i32 a4, i32 a5, char *s0, char *s1) {
+    return send_domain(RequestDomain::UI, op, a0, a1, a2, a3, a4, a5, s0, s1);
+}
+
+export i32 send_result(i32 op, i32 a0, i32 a1, i32 a2, i32 a3, i32 a4, i32 a5, char *s0, char *s1, i32 result_out, i32 result_size) {
+    return send_domain_result(RequestDomain::UI, op, a0, a1, a2, a3, a4, a5, s0, s1, result_out, result_size);
+}
+
+export i32 app_send(i32 op, i32 a0, char *s0) {
+    return send_domain(RequestDomain::APP, op, a0, 0, 0, 0, 0, 0, s0, "");
 }
 
 // --- lifecycle -----------------------------------------------------------------------------
@@ -106,67 +141,71 @@ export i32 send(i32 op, i32 a0, i32 a1, i32 a2, i32 a3, i32 a4, i32 a5, char *s0
 // rows are read here, in the app, so the OS needs to know nothing about
 // those annotations but @app itself.
 export i32 start(i32 self, char *type) {
-    g_owner = self;   // for the rest of the process's life
+    current_owner = self;   // for the rest of the process's life
     i32 win = 0;
     Annotations app = annotations.where("app", type);
     if (app.next()) {
         i32 view = app.fn();
         win = view(self);
-        if (win != 0) { send(UiOp::MAIN_WINDOW, win, 0, 0, 0, 0, 0, "", ""); }
+        if (win != 0) { app_send(AppOp::MAIN_WINDOW, win, ""); }
     }
     Annotations timers = annotations.where("timer", type);
     while (timers.next()) {
-        i32 id = send(UiOp::CREATE_TIMER, timers.arg(0), 0, 0, 0, 0, 0, "", "");
-        on(id, UiEventKind::TIMER, timers.fn());
+        Result<i32, UiError> created = Err(UiError::TimerLimit);
+        send_result(UiOp::CREATE_TIMER, timers.arg(0), 0, 0, 0, 0, 0, "", "",
+                    (i32)(&created), sizeof(Result<i32, UiError>));
+        i32 id = case created of { Ok(value) -> value; Err(e) -> ({ fail_ui(e); 0; }); };
+        on(id, EventKind::TIMER, timers.fn());
     }
     Annotations keys = annotations.where("key", type);
     while (keys.next()) {
-        i32 token = send(UiOp::CLAIM_KEY, 0, 0, 0, 0, 0, 0, keys.text(0), "");
-        on(token, UiEventKind::KEY, keys.fn());
+        i32 token = app_send(AppOp::CLAIM_KEY, 0, keys.text(0));
+        on(token, EventKind::KEY, keys.fn());
     }
     Annotations opens = annotations.where("open", type);
-    if (opens.next()) { on(0, UiEventKind::OPEN, opens.fn()); }
+    if (opens.next()) { on(0, EventKind::OPEN, opens.fn()); }
     Annotations closes = annotations.where("on_close", type);
-    if (closes.next()) { on(0, UiEventKind::CLOSE, closes.fn()); }
+    if (closes.next()) { on(0, EventKind::CLOSE, closes.fn()); }
     return win;
 }
 
-void deliver(UiEvent *ev) {
+void deliver(Event *ev) {
     i32 key = ev->id;
-    if (ev->kind == UiEventKind::KEY) { key = ev->token; }
-    if (ev->kind == UiEventKind::OPEN) { key = 0; }
-    if (ev->kind == UiEventKind::CLOSE) { key = 0; }
-    i32 self = g_owner;
+    if (ev->kind == EventKind::KEY) { key = ev->token; }
+    if (ev->kind == EventKind::OPEN) { key = 0; }
+    if (ev->kind == EventKind::CLOSE) { key = 0; }
+    i32 self = current_owner;
     i32 fn = lookup(self, key, ev->kind);
     if (fn != 0) {
-        if (ev->kind == UiEventKind::OPEN) {
-            fn(self, (i32)ev->text);
+        if (ev->kind == EventKind::OPEN) {
+            fn(self, (i32)(&ev->text[0]));
         } else {
             fn(self, ev->id, ev->arg);
         }
     }
-    if (ev->kind == UiEventKind::CLOSE) {
+    if (ev->kind == EventKind::CLOSE) {
         // The window is going away: after the app's own on_close, the
         // instance is done -- drop its handlers, tell the OS (it frees what
         // the instance owned) and end.
         forget(self);
-        send(UiOp::EXIT, 0, 0, 0, 0, 0, 0, "", "");
-        uiproto.exit();
+        app_send(AppOp::EXIT, 0, "");
+        app_transport.exit();
     }
 }
 
 // Deliver every pending event to its handler.
 export void pump() {
-    UiEvent ev;
-    while (uiproto.poll(&ev)) {
+    Event ev;
+    while (app_transport.poll(&ev)) {
         deliver(&ev);
     }
 }
 
-// The app's event loop: pump, then let other tasks run until the next tick.
+// The app's event loop: drain queued events, then block until a producer
+// publishes another event notification.
 export void run() {
     while (1) {
         pump();
-        uiproto.idle();
+        app_transport.idle();
     }
 }

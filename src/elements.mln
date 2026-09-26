@@ -1,7 +1,10 @@
 package elements;
 
 import runtime from "runtime/runtime.mln";
-import { UiOp, UiEventKind } from "protocol/ui.mln";
+import { UiOp } from "../../../contracts/myapp/ui.contract.mln";
+import { EventKind } from "../../../contracts/myapp/message.contract.mln";
+import { Result } from "../../../toolchain/MyStdLib/result.mln";
+import { UiError } from "../../../contracts/ui/widget.contract.mln";
 
 // The markup vocabulary. `<Window title="A" x={0} w={400}>...</Window>` in a
 // .dom.mln source lowers to a call of the function of the same name, with
@@ -15,9 +18,9 @@ import { UiOp, UiEventKind } from "protocol/ui.mln";
 // Column or Row wants, since the container places it), sizes to something
 // sensible, handlers to none. `testId` names the node for automation.
 //
-// Each element is one CREATE_* request of the UI protocol (protocol.mln,
+// Each element is one CREATE_* request of the UI contract,
 // docs/design/ui-protocol.md), answered by the UI server
-// (system/MyOS/src/ui/elements_server.mln) with the new node's id. Handler
+// (system/MyOS/src/ui/protocol_elements.mln) with the new node's id. Handler
 // parameters (on*) never leave the app: they go into the runtime's handler
 // table against that id, and the server's CLICK / CHANGE / ACTIVATE / TIMER
 // events come back to them as fn(owner, id, arg) -- a method or plain
@@ -26,7 +29,43 @@ import { UiOp, UiEventKind } from "protocol/ui.mln";
 // becomes a syscall and no markup changes.
 
 // Children of an element are attached with the `append_child` in scope.
-export void append_child(i32 parent, i32 child) { runtime.send(UiOp::APPEND_CHILD, parent, child, 0, 0, 0, 0, "", ""); }
+Result<i32, UiError> create(i32 op, i32 a0, i32 a1, i32 a2, i32 a3, i32 a4, i32 a5, char *s0, char *s1) {
+    Result<i32, UiError> result = Err(UiError::UnknownOperation(op));
+    runtime.send_result(op, a0, a1, a2, a3, a4, a5, s0, s1,
+                        (i32)(&result), sizeof(Result<i32, UiError>));
+    return result;
+}
+
+void register_handler(Result<i32, UiError> *result, i32 kind, i32 fn) {
+    case *result of {
+        Ok(id) -> ({ runtime.on(id, kind, fn); });
+        Err(_) -> _;
+    };
+}
+
+// Compiler hooks used only by `.dom.mln` lowering. Programmatic callers keep
+// the Result-returning APIs above/below; markup chooses the framework's
+// fail-the-instance policy for a tree that could not be constructed.
+export i32 unwrap_node(Result<i32, UiError> result) {
+    return case result of {
+        Ok(id) -> id;
+        Err(e) -> ({ runtime.fail_ui(e); 0; });
+    };
+}
+
+export void unwrap_append(Result<_, UiError> result) {
+    case result of {
+        Ok(_) -> _;
+        Err(e) -> ({ runtime.fail_ui(e); });
+    };
+}
+
+export Result<_, UiError> append_child(i32 parent, i32 child) {
+    return case create(UiOp::APPEND_CHILD, parent, child, 0, 0, 0, 0, "", "") of {
+        Ok(ignored) -> Ok(_);
+        Err(e) -> Err(e);
+    };
+}
 
 /**
  * Lowers JSX `<Window title="..." x={...} y={...} w={...} h={...} testId="..." />`.
@@ -38,7 +77,7 @@ export void append_child(i32 parent, i32 child) { runtime.send(UiOp::APPEND_CHIL
  * @param testId Stable automation locator id (default none).
  * @return DOM Node ID.
  */
-export i32 Window(char *title, i32 x = 0, i32 y = 0, i32 w = 400, i32 h = 300, char *testId = "") { return runtime.send(UiOp::CREATE_WINDOW, x, y, w, h, 0, 0, title, testId); }
+export Result<i32, UiError> Window(char *title, i32 x = 0, i32 y = 0, i32 w = 400, i32 h = 300, char *testId = "") { return create(UiOp::CREATE_WINDOW, x, y, w, h, 0, 0, title, testId); }
 
 /**
  * Lowers JSX `<Button text="..." x={...} y={...} w={...} h={...} onClick={...} testId="..." />`.
@@ -51,10 +90,10 @@ export i32 Window(char *title, i32 x = 0, i32 y = 0, i32 w = 400, i32 h = 300, c
  * @param testId Stable automation locator id (default none).
  * @return DOM Node ID.
  */
-export i32 Button(char *text, i32 x = 0, i32 y = 0, i32 w = 90, i32 h = 34, i32 onClick = 0, char *testId = "") {
-    i32 id = runtime.send(UiOp::CREATE_BUTTON, x, y, w, h, 0, 0, text, testId);
-    runtime.on(id, UiEventKind::CLICK, onClick);
-    return id;
+export Result<i32, UiError> Button(char *text, i32 x = 0, i32 y = 0, i32 w = 90, i32 h = 34, i32 onClick = 0, char *testId = "") {
+    Result<i32, UiError> result = create(UiOp::CREATE_BUTTON, x, y, w, h, 0, 0, text, testId);
+    register_handler(&result, EventKind::CLICK, onClick);
+    return result;
 }
 
 /**
@@ -69,10 +108,10 @@ export i32 Button(char *text, i32 x = 0, i32 y = 0, i32 w = 90, i32 h = 34, i32 
  * @param testId Stable automation locator id (default none).
  * @return DOM Node ID.
  */
-export i32 PrimaryButton(char *text, i32 x = 0, i32 y = 0, i32 w = 90, i32 h = 34, i32 onClick = 0, char *testId = "") {
-    i32 id = runtime.send(UiOp::CREATE_PRIMARY_BUTTON, x, y, w, h, 0, 0, text, testId);
-    runtime.on(id, UiEventKind::CLICK, onClick);
-    return id;
+export Result<i32, UiError> PrimaryButton(char *text, i32 x = 0, i32 y = 0, i32 w = 90, i32 h = 34, i32 onClick = 0, char *testId = "") {
+    Result<i32, UiError> result = create(UiOp::CREATE_PRIMARY_BUTTON, x, y, w, h, 0, 0, text, testId);
+    register_handler(&result, EventKind::CLICK, onClick);
+    return result;
 }
 
 /**
@@ -83,7 +122,7 @@ export i32 PrimaryButton(char *text, i32 x = 0, i32 y = 0, i32 w = 90, i32 h = 3
  * @param testId Stable automation locator id (default none).
  * @return DOM Node ID.
  */
-export i32 Text(char *text, i32 x = 0, i32 y = 0, char *testId = "") { return runtime.send(UiOp::CREATE_TEXT, x, y, 0, 0, 0, 0, text, testId); }
+export Result<i32, UiError> Text(char *text, i32 x = 0, i32 y = 0, char *testId = "") { return create(UiOp::CREATE_TEXT, x, y, 0, 0, 0, 0, text, testId); }
 
 /**
  * Lowers JSX `<Label text="..." x={...} y={...} color={...} bold={...} testId="..." />`.
@@ -96,7 +135,7 @@ export i32 Text(char *text, i32 x = 0, i32 y = 0, char *testId = "") { return ru
  * @param testId Stable automation locator id (default none).
  * @return DOM Node ID.
  */
-export i32 Label(char *text, i32 x = 0, i32 y = 0, i32 color = 0, i32 bold = 0, char *testId = "") { return runtime.send(UiOp::CREATE_LABEL, x, y, color, bold, 0, 0, text, testId); }
+export Result<i32, UiError> Label(char *text, i32 x = 0, i32 y = 0, i32 color = 0, i32 bold = 0, char *testId = "") { return create(UiOp::CREATE_LABEL, x, y, color, bold, 0, 0, text, testId); }
 
 /**
  * Lowers JSX `<Box x={...} y={...} w={...} h={...} background={...} border={...} />`.
@@ -108,8 +147,8 @@ export i32 Label(char *text, i32 x = 0, i32 y = 0, i32 color = 0, i32 bold = 0, 
  * @param border Border color (RGB, default 0).
  * @return DOM Node ID.
  */
-export i32 Box(i32 x = 0, i32 y = 0, i32 w = 100, i32 h = 100,
-               i32 background = 0, i32 border = 0) { return runtime.send(UiOp::CREATE_BOX, x, y, w, h, background, border, "", ""); }
+export Result<i32, UiError> Box(i32 x = 0, i32 y = 0, i32 w = 100, i32 h = 100,
+               i32 background = 0, i32 border = 0) { return create(UiOp::CREATE_BOX, x, y, w, h, background, border, "", ""); }
 
 /**
  * Lowers JSX `<Panel x={...} y={...} w={...} h={...} radius={...} />`.
@@ -120,7 +159,7 @@ export i32 Box(i32 x = 0, i32 y = 0, i32 w = 100, i32 h = 100,
  * @param radius Corner radius in logical pixels (default 0).
  * @return DOM Node ID.
  */
-export i32 Panel(i32 x = 0, i32 y = 0, i32 w = 100, i32 h = 100, i32 radius = 0) { return runtime.send(UiOp::CREATE_PANEL, x, y, w, h, radius, 0, "", ""); }
+export Result<i32, UiError> Panel(i32 x = 0, i32 y = 0, i32 w = 100, i32 h = 100, i32 radius = 0) { return create(UiOp::CREATE_PANEL, x, y, w, h, radius, 0, "", ""); }
 
 /**
  * Lowers JSX `<Column x={...} y={...} w={...} h={...} padding={...} gap={...} />`.
@@ -132,8 +171,8 @@ export i32 Panel(i32 x = 0, i32 y = 0, i32 w = 100, i32 h = 100, i32 radius = 0)
  * @param gap Gap between children in logical pixels (default 0).
  * @return DOM Node ID.
  */
-export i32 Column(i32 x = 0, i32 y = 0, i32 w = 100, i32 h = 100,
-                  i32 padding = 0, i32 gap = 0) { return runtime.send(UiOp::CREATE_COLUMN, x, y, w, h, padding, gap, "", ""); }
+export Result<i32, UiError> Column(i32 x = 0, i32 y = 0, i32 w = 100, i32 h = 100,
+                  i32 padding = 0, i32 gap = 0) { return create(UiOp::CREATE_COLUMN, x, y, w, h, padding, gap, "", ""); }
 
 /**
  * Lowers JSX `<Row x={...} y={...} w={...} h={...} padding={...} gap={...} />`.
@@ -145,8 +184,8 @@ export i32 Column(i32 x = 0, i32 y = 0, i32 w = 100, i32 h = 100,
  * @param gap Gap between children in logical pixels (default 0).
  * @return DOM Node ID.
  */
-export i32 Row(i32 x = 0, i32 y = 0, i32 w = 100, i32 h = 34,
-               i32 padding = 0, i32 gap = 0) { return runtime.send(UiOp::CREATE_ROW, x, y, w, h, padding, gap, "", ""); }
+export Result<i32, UiError> Row(i32 x = 0, i32 y = 0, i32 w = 100, i32 h = 34,
+               i32 padding = 0, i32 gap = 0) { return create(UiOp::CREATE_ROW, x, y, w, h, padding, gap, "", ""); }
 
 /**
  * Lowers JSX `<TextInput placeholder="..." x={...} y={...} w={...} h={...} capacity={...} onChange={...} testId="..." />`.
@@ -160,10 +199,10 @@ export i32 Row(i32 x = 0, i32 y = 0, i32 w = 100, i32 h = 34,
  * @param testId Stable automation locator id (default none).
  * @return DOM Node ID.
  */
-export i32 TextInput(char *placeholder, i32 x = 0, i32 y = 0, i32 w = 200, i32 h = 34, i32 capacity = 64, i32 onChange = 0, char *testId = "") {
-    i32 id = runtime.send(UiOp::CREATE_TEXT_INPUT, x, y, w, h, capacity, 0, placeholder, testId);
-    runtime.on(id, UiEventKind::CHANGE, onChange);
-    return id;
+export Result<i32, UiError> TextInput(char *placeholder, i32 x = 0, i32 y = 0, i32 w = 200, i32 h = 34, i32 capacity = 64, i32 onChange = 0, char *testId = "") {
+    Result<i32, UiError> result = create(UiOp::CREATE_TEXT_INPUT, x, y, w, h, capacity, 0, placeholder, testId);
+    register_handler(&result, EventKind::CHANGE, onChange);
+    return result;
 }
 
 /**
@@ -176,10 +215,10 @@ export i32 TextInput(char *placeholder, i32 x = 0, i32 y = 0, i32 w = 200, i32 h
  * @param testId Stable automation locator id (default none).
  * @return DOM Node ID.
  */
-export i32 Checkbox(char *text, i32 x = 0, i32 y = 0, i32 checked = 0, i32 onClick = 0, char *testId = "") {
-    i32 id = runtime.send(UiOp::CREATE_CHECKBOX, x, y, checked, 0, 0, 0, text, testId);
-    runtime.on(id, UiEventKind::CLICK, onClick);
-    return id;
+export Result<i32, UiError> Checkbox(char *text, i32 x = 0, i32 y = 0, i32 checked = 0, i32 onClick = 0, char *testId = "") {
+    Result<i32, UiError> result = create(UiOp::CREATE_CHECKBOX, x, y, checked, 0, 0, 0, text, testId);
+    register_handler(&result, EventKind::CLICK, onClick);
+    return result;
 }
 
 /**
@@ -189,7 +228,7 @@ export i32 Checkbox(char *text, i32 x = 0, i32 y = 0, i32 checked = 0, i32 onCli
  * @param w Logical width (default 100).
  * @return DOM Node ID.
  */
-export i32 Separator(i32 x = 0, i32 y = 0, i32 w = 100) { return runtime.send(UiOp::CREATE_SEPARATOR, x, y, w, 0, 0, 0, "", ""); }
+export Result<i32, UiError> Separator(i32 x = 0, i32 y = 0, i32 w = 100) { return create(UiOp::CREATE_SEPARATOR, x, y, w, 0, 0, 0, "", ""); }
 
 /**
  * Lowers JSX `<Timer interval={...} onTick={...} />`.
@@ -197,10 +236,10 @@ export i32 Separator(i32 x = 0, i32 y = 0, i32 w = 100) { return runtime.send(Ui
  * @param onTick Timer callback function pointer.
  * @return DOM Node ID.
  */
-export i32 Timer(i32 interval, i32 onTick) {
-    i32 id = runtime.send(UiOp::CREATE_TIMER, interval, 0, 0, 0, 0, 0, "", "");
-    runtime.on(id, UiEventKind::TIMER, onTick);
-    return id;
+export Result<i32, UiError> Timer(i32 interval, i32 onTick) {
+    Result<i32, UiError> result = create(UiOp::CREATE_TIMER, interval, 0, 0, 0, 0, 0, "", "");
+    register_handler(&result, EventKind::TIMER, onTick);
+    return result;
 }
 
 /**
@@ -216,10 +255,10 @@ export i32 Timer(i32 interval, i32 onTick) {
  * @param testId Stable automation locator id (default none).
  * @return DOM Node ID.
  */
-export i32 TextArea(char *name, i32 x = 0, i32 y = 0, i32 w = 300, i32 h = 200, i32 capacity = 1024, i32 readonly = 0, i32 onChange = 0, char *testId = "") {
-    i32 id = runtime.send(UiOp::CREATE_TEXT_AREA, x, y, w, h, capacity, readonly, name, testId);
-    runtime.on(id, UiEventKind::CHANGE, onChange);
-    return id;
+export Result<i32, UiError> TextArea(char *name, i32 x = 0, i32 y = 0, i32 w = 300, i32 h = 200, i32 capacity = 1024, i32 readonly = 0, i32 onChange = 0, char *testId = "") {
+    Result<i32, UiError> result = create(UiOp::CREATE_TEXT_AREA, x, y, w, h, capacity, readonly, name, testId);
+    register_handler(&result, EventKind::CHANGE, onChange);
+    return result;
 }
 
 /**
@@ -237,10 +276,30 @@ export i32 TextArea(char *name, i32 x = 0, i32 y = 0, i32 w = 300, i32 h = 200, 
  * @param testId Stable automation locator id (default none).
  * @return DOM Node ID.
  */
-export i32 List(char *name, i32 x = 0, i32 y = 0, i32 w = 300, i32 h = 200, i32 capacity = 1024, i32 onChange = 0, i32 onActivate = 0, char *testId = "") {
-    i32 id = runtime.send(UiOp::CREATE_LIST, x, y, w, h, capacity, 0, name, testId);
-    runtime.on(id, UiEventKind::CHANGE, onChange);
-    runtime.on(id, UiEventKind::ACTIVATE, onActivate);
-    return id;
+export Result<i32, UiError> List(char *name, i32 x = 0, i32 y = 0, i32 w = 300, i32 h = 200, i32 capacity = 1024, i32 onChange = 0, i32 onActivate = 0, char *testId = "") {
+    Result<i32, UiError> result = create(UiOp::CREATE_LIST, x, y, w, h, capacity, 0, name, testId);
+    register_handler(&result, EventKind::CHANGE, onChange);
+    register_handler(&result, EventKind::ACTIVATE, onActivate);
+    return result;
 }
 
+// `.dom.mln` adapters. JSX has an atomic tree-construction policy: it invokes
+// the same typed functions above, but a failed node aborts the application
+// instead of leaving a partial tree. These adapters preserve UiError all the
+// way to that terminal policy; they do not translate it to a sentinel.
+export void dom_append_child(i32 parent, i32 child) { unwrap_append(append_child(parent, child)); }
+export i32 dom_Window(char *title, i32 x, i32 y, i32 w, i32 h, char *testId) { return unwrap_node(Window(title, x, y, w, h, testId)); }
+export i32 dom_Button(char *text, i32 x, i32 y, i32 w, i32 h, i32 onClick, char *testId) { return unwrap_node(Button(text, x, y, w, h, onClick, testId)); }
+export i32 dom_PrimaryButton(char *text, i32 x, i32 y, i32 w, i32 h, i32 onClick, char *testId) { return unwrap_node(PrimaryButton(text, x, y, w, h, onClick, testId)); }
+export i32 dom_Text(char *text, i32 x, i32 y, char *testId) { return unwrap_node(Text(text, x, y, testId)); }
+export i32 dom_Label(char *text, i32 x, i32 y, i32 color, i32 bold, char *testId) { return unwrap_node(Label(text, x, y, color, bold, testId)); }
+export i32 dom_Box(i32 x, i32 y, i32 w, i32 h, i32 background, i32 border) { return unwrap_node(Box(x, y, w, h, background, border)); }
+export i32 dom_Panel(i32 x, i32 y, i32 w, i32 h, i32 radius) { return unwrap_node(Panel(x, y, w, h, radius)); }
+export i32 dom_Column(i32 x, i32 y, i32 w, i32 h, i32 padding, i32 gap) { return unwrap_node(Column(x, y, w, h, padding, gap)); }
+export i32 dom_Row(i32 x, i32 y, i32 w, i32 h, i32 padding, i32 gap) { return unwrap_node(Row(x, y, w, h, padding, gap)); }
+export i32 dom_TextInput(char *placeholder, i32 x, i32 y, i32 w, i32 h, i32 capacity, i32 onChange, char *testId) { return unwrap_node(TextInput(placeholder, x, y, w, h, capacity, onChange, testId)); }
+export i32 dom_Checkbox(char *text, i32 x, i32 y, i32 checked, i32 onClick, char *testId) { return unwrap_node(Checkbox(text, x, y, checked, onClick, testId)); }
+export i32 dom_Separator(i32 x, i32 y, i32 w) { return unwrap_node(Separator(x, y, w)); }
+export i32 dom_Timer(i32 interval, i32 onTick) { return unwrap_node(Timer(interval, onTick)); }
+export i32 dom_TextArea(char *name, i32 x, i32 y, i32 w, i32 h, i32 capacity, i32 readonly, i32 onChange, char *testId) { return unwrap_node(TextArea(name, x, y, w, h, capacity, readonly, onChange, testId)); }
+export i32 dom_List(char *name, i32 x, i32 y, i32 w, i32 h, i32 capacity, i32 onChange, i32 onActivate, char *testId) { return unwrap_node(List(name, x, y, w, h, capacity, onChange, onActivate, testId)); }

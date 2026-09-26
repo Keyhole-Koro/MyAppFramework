@@ -1,0 +1,39 @@
+package app_transport;
+
+// The application's end of the request/event transport declared in
+// contracts/myapp/message.contract.mln. request() queues the message and blocks until the
+// reply is in; poll() takes one event; idle() blocks for an event; exit() ends
+// the process. Everything the message names by pointer is copied by the
+// OS at the boundary.
+
+import { os_call, sys_wait_notification, sys_exit } from "../../../../toolchain/MyStdLib/platform/myos/syscall.masm";
+import { OsService } from "../../../../contracts/myos/services.contract.mln";
+import { Request, Event, TransportSignal } from "../../../../contracts/myapp/message.contract.mln";
+
+export i32 request(Request *m) {
+    // The shared request ring can be briefly full while several applications
+    // are mounting. A rejected enqueue has no reply, so retry it instead of
+    // entering the reply wait with no request in flight.
+    while (os_call(OsService::REQUEST, (i32)m) == 0) {
+        sys_wait_notification(TransportSignal::REQUEST_SPACE);
+    }
+    i32 r[2];
+    r[0] = 0;
+    while (os_call(OsService::REPLY, (i32)(&r[0])) == 0) {
+        sys_wait_notification(TransportSignal::REPLY);
+    }
+    return r[0];
+}
+
+export bool poll(Event *out) {
+    if (os_call(OsService::POLL, (i32)out) == 0) { return false; }
+    return true;
+}
+
+export void idle() {
+    sys_wait_notification(TransportSignal::EVENT);
+}
+
+export void exit() {
+    sys_exit(0);
+}
