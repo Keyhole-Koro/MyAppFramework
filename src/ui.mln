@@ -1,7 +1,9 @@
 package ui;
 
 import runtime from "runtime/runtime.mln";
-import strbuf from "../../../toolchain/MyStdLib/text/strbuf.mln";
+import str from "../../../toolchain/MyStdLib/str.mln";
+import { InlineString } from "../../../toolchain/MyStdLib/text/inline_string.mln";
+import { InlineCString } from "../../../toolchain/MyStdLib/text/inline_c_string.mln";
 import { Option } from "../../../toolchain/MyStdLib/option.mln";
 import { Result } from "../../../toolchain/MyStdLib/result.mln";
 import { UiError } from "../../../contracts/ui/widget.contract.mln";
@@ -33,12 +35,11 @@ export i32 text_copy(i32 id, char *out, i32 cap) { return runtime.send(UiOp::TEX
 // set_text with a format: `%d` takes the next i32 argument, `%s` the next
 // as a char*, `%%` is a percent sign. (The server keeps its own copy of
 // every text it is given, so the app's buffers are its own business.)
-char g_fmt_buf[256];
+InlineCString<256> g_fmt_buf;
 export void set_text_fmt(i32 id, char *fmt, i32 a, i32 b) {
     // Formatted here, in the app: a `%s` argument is a pointer into this
     // process, which only this side can read. The server gets plain text.
-    char *buf = &g_fmt_buf[0];
-    i32 n = strbuf.reset(buf);
+    g_fmt_buf.clear();
     i32 next = 0;
     i32 i = 0;
     while (fmt[i] != 0) {
@@ -48,26 +49,27 @@ export void set_text_fmt(i32 id, char *fmt, i32 a, i32 b) {
             i32 value = a;
             if (next == 1) { value = b; }
             if (spec == 'd') {
-                n = strbuf.append_i32(buf, 256, n, value);
+                InlineString<12> decimal = value.to_string();
+                g_fmt_buf.append(decimal.as_str());
                 next++;
                 i = i + 2;
             } else if (spec == 's') {
-                if (value != 0) { n = strbuf.append(buf, 256, n, (char*)value); }
+                if (value != 0) { g_fmt_buf.append(str.from_c((char*)value)); }
                 next++;
                 i = i + 2;
             } else if (spec == '%') {
-                n = strbuf.push(buf, 256, n, '%');
+                g_fmt_buf.push((u8)'%');
                 i = i + 2;
             } else {
-                n = strbuf.push(buf, 256, n, c);
+                g_fmt_buf.push((u8)c);
                 i++;
             }
         } else {
-            n = strbuf.push(buf, 256, n, c);
+            g_fmt_buf.push((u8)c);
             i++;
         }
     }
-    set_text(id, buf);
+    set_text(id, g_fmt_buf.as_ptr());
 }
 
 // --- widgets --------------------------------------------------------------------------------
