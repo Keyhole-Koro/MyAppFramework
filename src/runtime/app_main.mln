@@ -9,6 +9,7 @@ package app;
 // (sizeof the receiver type) from the process heap, zeroed.
 
 import runtime from "runtime.mln";
+import app_allocator from "allocator.mln";
 import { sys_sbrk } from "../../../../toolchain/MyStdLib/platform/myos/syscall.masm";
 // The process-side carriers of the UI protocol (OS_CALL syscalls). Nothing
 // here calls them; importing the file is what links them into the image.
@@ -17,6 +18,7 @@ import annotations from "../../../../toolchain/MyStdLib/meta/annotations.mln";
 import { Annotations } from "../../../../toolchain/MyStdLib/meta/annotations.mln";
 
 export i32 main() {
+    app_allocator.init();
     Annotations rows = annotations.named("app");
     if (!rows.next()) { return 1; }
     i32 size = rows.size();

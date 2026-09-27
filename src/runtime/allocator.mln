@@ -1,0 +1,77 @@
+package app_allocator;
+
+import allocator from "../../../../toolchain/MyStdLib/memory/allocator.mln";
+import { sys_sbrk } from "../../../../toolchain/MyStdLib/platform/myos/syscall.masm";
+
+// A process-local first-fit heap over sbrk. Headers are two words:
+// payload size followed by the next-free pointer.
+i32 HEADER_SIZE = 8;
+i32 g_free_head = 0;
+
+i32 align_up(i32 size) { return (size + 3) & ~3; }
+i32 read_word(i32 address) {
+    i32 *pointer = (i32*)address;
+    return *pointer;
+}
+void write_word(i32 address, i32 value) {
+    i32 *pointer = (i32*)address;
+    *pointer = value;
+}
+
+i32 block_size(i32 block) { return read_word(block); }
+i32 block_next(i32 block) { return read_word(block + 4); }
+void set_block_size(i32 block, i32 size) { write_word(block, size); }
+void set_block_next(i32 block, i32 next) { write_word(block + 4, next); }
+i32 block_end(i32 block) { return block + HEADER_SIZE + block_size(block); }
+
+/** Allocates bytes in the current application process. */
+export i32 alloc(i32 requested) {
+    if (requested <= 0) { return 0; }
+    i32 size = align_up(requested);
+    if (size <= 0 || size > 0x7ffffffF - HEADER_SIZE) { return 0; }
+    i32 previous = 0;
+    i32 block = g_free_head;
+    while (block != 0) {
+        i32 next = block_next(block);
+        if (block_size(block) >= size) {
+            if (previous == 0) { g_free_head = next; }
+            else { set_block_next(previous, next); }
+            return block + HEADER_SIZE;
+        }
+        previous = block;
+        block = next;
+    }
+
+    i32 fresh = sys_sbrk(size + HEADER_SIZE);
+    if (fresh <= 0) { return 0; }
+    set_block_size(fresh, size);
+    set_block_next(fresh, 0);
+    return fresh + HEADER_SIZE;
+}
+
+/** Returns an application allocation to the address-ordered free list. */
+export void free(i32 pointer) {
+    if (pointer == 0) { return; }
+    i32 block = pointer - HEADER_SIZE;
+    i32 previous = 0;
+    i32 current = g_free_head;
+    while (current != 0 && current < block) {
+        previous = current;
+        current = block_next(current);
+    }
+    set_block_next(block, current);
+    if (previous == 0) { g_free_head = block; }
+    else { set_block_next(previous, block); }
+
+    if (current != 0 && block_end(block) == current) {
+        set_block_size(block, block_size(block) + HEADER_SIZE + block_size(current));
+        set_block_next(block, block_next(current));
+    }
+    if (previous != 0 && block_end(previous) == block) {
+        set_block_size(previous, block_size(previous) + HEADER_SIZE + block_size(block));
+        set_block_next(previous, block_next(block));
+    }
+}
+
+/** Installs this process heap as the standard owned-container allocator. */
+export void init() { allocator.configure(alloc, free); }
