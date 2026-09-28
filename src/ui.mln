@@ -1,11 +1,11 @@
 package ui;
 
 import runtime from "runtime/runtime.mln";
-import str from "../../../toolchain/MyStdLib/str.mln";
-import { InlineString } from "../../../toolchain/MyStdLib/text/inline_string.mln";
-import { InlineCString } from "../../../toolchain/MyStdLib/text/inline_c_string.mln";
-import { Option } from "../../../toolchain/MyStdLib/option.mln";
-import { Result } from "../../../toolchain/MyStdLib/result.mln";
+import str from "@std/text/str.mln";
+import { InlineString } from "@std/text/inline_string.mln";
+import { InlineCString } from "@std/text/inline_c_string.mln";
+import { Option } from "@std/core/option.mln";
+import { Result } from "@std/core/result.mln";
 import { UiError } from "../../../contracts/ui/widget.contract.mln";
 import { UiOp } from "../../../contracts/myapp/ui.contract.mln";
 import { AppOp } from "../../../contracts/myapp/lifecycle.contract.mln";

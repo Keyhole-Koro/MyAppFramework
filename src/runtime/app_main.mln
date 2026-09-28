@@ -10,12 +10,12 @@ package app;
 
 import runtime from "runtime.mln";
 import app_allocator from "allocator.mln";
-import { sys_sbrk } from "../../../../toolchain/MyStdLib/platform/myos/syscall.masm";
+import { sys_sbrk } from "@std/platform/myos/syscall.masm";
 // The process-side carriers of the UI protocol (OS_CALL syscalls). Nothing
 // here calls them; importing the file is what links them into the image.
 import app_transport from "transport.mln";
-import annotations from "../../../../toolchain/MyStdLib/meta/annotations.mln";
-import { Annotations } from "../../../../toolchain/MyStdLib/meta/annotations.mln";
+import annotations from "@std/meta/annotations.mln";
+import { Annotations } from "@std/meta/annotations.mln";
 
 export i32 main() {
     app_allocator.init();

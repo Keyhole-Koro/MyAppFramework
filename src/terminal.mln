@@ -4,9 +4,9 @@ package terminal;
 // stdout to one of this app's TextAreas. Generic process control lives in
 // MyStdLib/hosted/process.mln.
 
-import { os_call } from "../../../toolchain/MyStdLib/platform/myos/syscall.masm";
+import { os_call } from "@std/platform/myos/syscall.masm";
 import { OsService } from "../../../contracts/myos/services.contract.mln";
-import { Result } from "../../../toolchain/MyStdLib/result.mln";
+import { Result } from "@std/core/result.mln";
 import { SpawnError } from "../../../contracts/process/spawn.contract.mln";
 import { ProcSpawnArgs, ProcBindArgs, ProcUnbindArgs } from "../../../contracts/myos/process-args.contract.mln";
 

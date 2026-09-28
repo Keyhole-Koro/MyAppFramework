@@ -23,11 +23,11 @@ import app_transport from "transport.mln";
 import { Request, RequestDomain, Event, EventKind } from "../../../../contracts/myapp/message.contract.mln";
 import { UiOp } from "../../../../contracts/myapp/ui.contract.mln";
 import { AppOp } from "../../../../contracts/myapp/lifecycle.contract.mln";
-import hosted_log from "../../../../toolchain/MyStdLib/hosted/log.mln";
-import annotations from "../../../../toolchain/MyStdLib/meta/annotations.mln";
-import { Annotations } from "../../../../toolchain/MyStdLib/meta/annotations.mln";
+import hosted_log from "@std/hosted/log.mln";
+import annotations from "@std/meta/annotations.mln";
+import { Annotations } from "@std/meta/annotations.mln";
 import { UiError } from "../../../../contracts/ui/widget.contract.mln";
-import { Result } from "../../../../toolchain/MyStdLib/result.mln";
+import { Result } from "@std/core/result.mln";
 
 // The instance this process runs (one per process): handlers get it as
 // their receiver. Requests carry it as `owner` too, but the OS replaces

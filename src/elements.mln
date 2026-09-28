@@ -3,7 +3,7 @@ package elements;
 import runtime from "runtime/runtime.mln";
 import { UiOp } from "../../../contracts/myapp/ui.contract.mln";
 import { EventKind } from "../../../contracts/myapp/message.contract.mln";
-import { Result } from "../../../toolchain/MyStdLib/result.mln";
+import { Result } from "@std/core/result.mln";
 import { UiError } from "../../../contracts/ui/widget.contract.mln";
 
 // The markup vocabulary. `<Window title="A" x={0} w={400}>...</Window>` in a

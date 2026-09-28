@@ -1,7 +1,7 @@
 package app_allocator;
 
-import allocator from "../../../../toolchain/MyStdLib/memory/allocator.mln";
-import { sys_sbrk } from "../../../../toolchain/MyStdLib/platform/myos/syscall.masm";
+import allocator from "@std/memory/allocator.mln";
+import { sys_sbrk } from "@std/platform/myos/syscall.masm";
 
 // A process-local first-fit heap over sbrk. Headers are two words:
 // payload size followed by the next-free pointer.

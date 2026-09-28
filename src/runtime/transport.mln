@@ -6,7 +6,7 @@ package app_transport;
 // the process. Everything the message names by pointer is copied by the
 // OS at the boundary.
 
-import { os_call, sys_wait_notification, sys_exit } from "../../../../toolchain/MyStdLib/platform/myos/syscall.masm";
+import { os_call, sys_wait_notification, sys_exit } from "@std/platform/myos/syscall.masm";
 import { OsService } from "../../../../contracts/myos/services.contract.mln";
 import { Request, Event, TransportSignal } from "../../../../contracts/myapp/message.contract.mln";
 
