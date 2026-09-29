@@ -7,8 +7,7 @@ process -- an MBIN executable on the disk, built from its `.dom.mln` plus
 this SDK -- and this is everything it links: the SDK imports nothing from
 MyOS or MyKernel. It reaches the OS only through the `OS_CALL` syscall
 (the UI protocol, files, other processes), and the OS talks back only
-through events. See `docs/design/os-app-boundaries.md` in MyComputer for
-the layers and `docs/design/ui-protocol.md` for the message table.
+through events. See `docs/design/ui-protocol.md` for the message table.
 
 Two kinds of framework file, by who imports them:
 
@@ -70,4 +69,4 @@ rows from `/apps/*.mbin` to discover, launch, and reap installed applications.
 The linker lays each executable's rows out as one section
 (`docs/design/toolchain-collected-sections.md`).
 
-Tests: `make qa-boundaries` and `make framework-test` in MyComputer.
+Tests: `make framework-test` in MyComputer.

@@ -8,7 +8,7 @@ import { Option } from "@std/core/option.mln";
 import { Result } from "@std/core/result.mln";
 import { UiError } from "../../../contracts/ui/widget.contract.mln";
 import { UiOp } from "../../../contracts/myapp/ui.contract.mln";
-import { AppOp } from "../../../contracts/myapp/lifecycle.contract.mln";
+import { AppOp, AppError } from "../../../contracts/myapp/lifecycle.contract.mln";
 
 // The UI an application is allowed to talk to. Apps import this and the
 // element vocabulary (elements.mln, for markup) and nothing else, so the
@@ -155,5 +155,14 @@ export i32 rgb(i32 r, i32 g, i32 b) { return runtime.send(UiOp::RGB, r, g, b, 0,
 
 // --- other apps ---------------------------------------------------------------------------------
 
-// Hand a path to whichever app declares @open; returns its window or 0.
-export i32 open(char *path) { return runtime.app_send(AppOp::OPEN, 0, path); }
+/** Hand a path to whichever app declares @open.
+ * @param path NUL-terminated path to open.
+ * @return Ok(Some(window)) when delivered immediately, Ok(None) while the
+ *         target app is starting, or Err when opening cannot be completed.
+ */
+export Result<Option<i32>, AppError> open(char *path) {
+    Result<Option<i32>, AppError> result = Err(AppError::NoOpenHandler);
+    runtime.app_send_result(AppOp::OPEN, 0, path, (i32)(&result),
+                            sizeof(Result<Option<i32>, AppError>));
+    return result;
+}

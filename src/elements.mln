@@ -18,15 +18,14 @@ import { UiError } from "../../../contracts/ui/widget.contract.mln";
 // Column or Row wants, since the container places it), sizes to something
 // sensible, handlers to none. `testId` names the node for automation.
 //
-// Each element is one CREATE_* request of the UI contract,
-// docs/design/ui-protocol.md), answered by the UI server
+// Each element is one CREATE_* request of the UI contract, answered by the UI server
 // (system/MyOS/src/ui/protocol_elements.mln) with the new node's id. Handler
 // parameters (on*) never leave the app: they go into the runtime's handler
 // table against that id, and the server's CLICK / CHANGE / ACTIVATE / TIMER
 // events come back to them as fn(owner, id, arg) -- a method or plain
 // handler is passed as is, since the calling convention ignores trailing
-// arguments. As processes (docs/design/os-app-boundaries.md) the request
-// becomes a syscall and no markup changes.
+// arguments. Since apps run as processes, the request becomes a syscall and
+// no markup changes.
 
 // Children of an element are attached with the `append_child` in scope.
 Result<i32, UiError> create(i32 op, i32 a0, i32 a1, i32 a2, i32 a3, i32 a4, i32 a5, char *s0, char *s1) {

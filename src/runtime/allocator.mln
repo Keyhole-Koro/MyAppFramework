@@ -2,6 +2,8 @@ package app_allocator;
 
 import allocator from "@std/memory/allocator.mln";
 import { sys_sbrk } from "@std/platform/myos/syscall.masm";
+import { AllocationError } from "@std/memory/allocator.mln";
+import { Result } from "@std/core/result.mln";
 
 // A process-local first-fit heap over sbrk. Headers are two words:
 // payload size followed by the next-free pointer.
@@ -24,11 +26,16 @@ void set_block_size(i32 block, i32 size) { write_word(block, size); }
 void set_block_next(i32 block, i32 next) { write_word(block + 4, next); }
 i32 block_end(i32 block) { return block + HEADER_SIZE + block_size(block); }
 
-/** Allocates bytes in the current application process. */
-export i32 alloc(i32 requested) {
-    if (requested <= 0) { return 0; }
+/**
+ * Allocates bytes in the current application process.
+ * @return `Ok(pointer)` on success, or `Err(InvalidSize|OutOfMemory)`.
+ */
+export Result<i32, AllocationError> alloc(i32 requested) {
+    if (requested <= 0) { return Err(AllocationError::InvalidSize); }
     i32 size = align_up(requested);
-    if (size <= 0 || size > 0x7ffffffF - HEADER_SIZE) { return 0; }
+    if (size <= 0 || size > 0x7ffffffF - HEADER_SIZE) {
+        return Err(AllocationError::InvalidSize);
+    }
     i32 previous = 0;
     i32 block = g_free_head;
     while (block != 0) {
@@ -36,17 +43,17 @@ export i32 alloc(i32 requested) {
         if (block_size(block) >= size) {
             if (previous == 0) { g_free_head = next; }
             else { set_block_next(previous, next); }
-            return block + HEADER_SIZE;
+            return Ok(block + HEADER_SIZE);
         }
         previous = block;
         block = next;
     }
 
     i32 fresh = sys_sbrk(size + HEADER_SIZE);
-    if (fresh <= 0) { return 0; }
+    if (fresh <= 0) { return Err(AllocationError::OutOfMemory); }
     set_block_size(fresh, size);
     set_block_next(fresh, 0);
-    return fresh + HEADER_SIZE;
+    return Ok(fresh + HEADER_SIZE);
 }
 
 /** Returns an application allocation to the address-ordered free list. */

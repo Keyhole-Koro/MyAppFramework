@@ -6,11 +6,6 @@
 Framework内は、`src/*.mln`（アプリがimportする面）と`src/runtime/`（SDKの内側）に分かれる。
 OSと共有するdata-only契約はFrameworkの所有物ではなく、MyComputerルートの`contracts/myapp/`に置く。
 
-境界は「Framework が OS の上に乗る」という一直線ではない。ソース依存は
-`app → MyAppFramework / MyStdLib hosted`、各client/providerから`contracts/`への依存というDAG、
-実行時の要求は `app → SDK stub → OS_CALL → MyOS` である。MyOSはMyAppFrameworkをimportしない。
-詳しい判定基準と禁止importは`docs/design/os-app-boundaries.md`。
-
 | ファイル | 役割 |
 | --- | --- |
 | `src/annotations.mln` | `@app` / `@timer` / `@key` / `@open` / `@on_close` の**宣言** |
@@ -29,8 +24,7 @@ schema とプロセス内の view 起動は SDK、インストール済みアプ
 reap はシェル（`MyOS/src/shell/app.mln`）の責務。
 コンパイラが残したメタデータ表の読み手は MyStdLib（`meta/annotations.mln`）：シェルは
 ディスク上の各 `.mbin` のヘッダから `@app` 行を読んでランチャーに載せ、アプリのプロセスは
-自分の image の行から `@timer` 等を登録する。層の全体像は `docs/design/os-app-boundaries.md`、
-メッセージ表は `docs/design/ui-protocol.md`。
+自分の image の行から `@timer` 等を登録する。メッセージ表は `docs/design/ui-protocol.md`。
 コンパイラは「`@a(x)` を宣言と照合して、モジュールの表に 1 行記録する」ことしか知らない
 （`toolchain/MyLangCompiler/docs/grammar.md` "Attributes and annotations"）。MyStdLib は row を
 意味付けせず返すだけで、SDK と MyOS がそれぞれ自分の責務に必要な row を解釈する。
@@ -177,7 +171,6 @@ framework が独自 annotation を同じ表に混ぜても、各読み手は要�
 ## 検証
 
 ```
-make qa-boundaries                                 # 3 project の import 境界
 make build                                        # アプリは build/user/*.mbin → disk.img
 python3 system/MyOS/tests/app_framework_test.py   # launcher / single / @key / @open / close / dialog（make framework-test）
 python3 system/MyOS/tests/dom_click_test.py       # Counter と Notes の操作

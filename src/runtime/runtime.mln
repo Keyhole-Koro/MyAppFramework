@@ -22,10 +22,10 @@ package runtime;
 import app_transport from "transport.mln";
 import { Request, RequestDomain, Event, EventKind } from "../../../../contracts/myapp/message.contract.mln";
 import { UiOp } from "../../../../contracts/myapp/ui.contract.mln";
-import { AppOp } from "../../../../contracts/myapp/lifecycle.contract.mln";
+import { AppOp, KeyClaimError } from "../../../../contracts/myapp/lifecycle.contract.mln";
 import hosted_log from "@std/hosted/log.mln";
 import annotations from "@std/meta/annotations.mln";
-import { Annotations } from "@std/meta/annotations.mln";
+import { Annotations, AnnotationError } from "@std/meta/annotations.mln";
 import { UiError } from "../../../../contracts/ui/widget.contract.mln";
 import { Result } from "@std/core/result.mln";
 
@@ -34,6 +34,20 @@ import { Result } from "@std/core/result.mln";
 // that with the pid -- to the server, the owner of everything this process
 // creates is the process -- and events name that pid, not this pointer.
 i32 current_owner = 0;
+
+i32 annotation_i32(Result<i32, AnnotationError> value) {
+    return case value of {
+        Ok(v) -> v;
+        Err(_) -> 0;
+    };
+}
+
+char* annotation_text(Result<char*, AnnotationError> value) {
+    return case value of {
+        Ok(v) -> v;
+        Err(_) -> "";
+    };
+}
 
 export i32 owner() { return current_owner; }
 
@@ -133,6 +147,10 @@ export i32 app_send(i32 op, i32 a0, char *s0) {
     return send_domain(RequestDomain::APP, op, a0, 0, 0, 0, 0, 0, s0, "");
 }
 
+export i32 app_send_result(i32 op, i32 a0, char *s0, i32 result_out, i32 result_size) {
+    return send_domain_result(RequestDomain::APP, op, a0, 0, 0, 0, 0, 0, s0, "", result_out, result_size);
+}
+
 // --- lifecycle -----------------------------------------------------------------------------
 
 // Launch `self`, an instance of the type named `type`: run its @app view
@@ -145,27 +163,32 @@ export i32 start(i32 self, char *type) {
     i32 win = 0;
     Annotations app = annotations.where("app", type);
     if (app.next()) {
-        i32 view = app.fn();
+        i32 view = annotation_i32(app.fn());
         win = view(self);
         if (win != 0) { app_send(AppOp::MAIN_WINDOW, win, ""); }
     }
     Annotations timers = annotations.where("timer", type);
     while (timers.next()) {
         Result<i32, UiError> created = Err(UiError::TimerLimit);
-        send_result(UiOp::CREATE_TIMER, timers.arg(0), 0, 0, 0, 0, 0, "", "",
+        send_result(UiOp::CREATE_TIMER, annotation_i32(timers.arg(0)), 0, 0, 0, 0, 0, "", "",
                     (i32)(&created), sizeof(Result<i32, UiError>));
         i32 id = case created of { Ok(value) -> value; Err(e) -> ({ fail_ui(e); 0; }); };
-        on(id, EventKind::TIMER, timers.fn());
+        on(id, EventKind::TIMER, annotation_i32(timers.fn()));
     }
     Annotations keys = annotations.where("key", type);
     while (keys.next()) {
-        i32 token = app_send(AppOp::CLAIM_KEY, 0, keys.text(0));
-        on(token, EventKind::KEY, keys.fn());
+        Result<i32, KeyClaimError> claimed = Err(KeyClaimError::TableFull);
+        app_send_result(AppOp::CLAIM_KEY, 0, annotation_text(keys.text(0)),
+                        (i32)(&claimed), sizeof(Result<i32, KeyClaimError>));
+        case claimed of {
+            Ok(token) -> on(token, EventKind::KEY, annotation_i32(keys.fn()));
+            Err(_) -> log("Could not register app keyboard shortcut");
+        };
     }
     Annotations opens = annotations.where("open", type);
-    if (opens.next()) { on(0, EventKind::OPEN, opens.fn()); }
+    if (opens.next()) { on(0, EventKind::OPEN, annotation_i32(opens.fn())); }
     Annotations closes = annotations.where("on_close", type);
-    if (closes.next()) { on(0, EventKind::CLOSE, closes.fn()); }
+    if (closes.next()) { on(0, EventKind::CLOSE, annotation_i32(closes.fn())); }
     return win;
 }
 
