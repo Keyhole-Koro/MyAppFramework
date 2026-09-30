@@ -27,10 +27,15 @@ import { AppOp, AppError } from "../../../contracts/myapp/lifecycle.contract.mln
 
 export void set_text(i32 id, char *s) { runtime.send(UiOp::SET_TEXT, id, 0, 0, 0, 0, 0, s, ""); }
 // The node's text, copied into `out` (at most `cap` bytes incl. NUL);
-// returns its length. The app names the buffer: nothing an app holds
-// points into the server, so a text longer than the buffer is cut, not
-// read past.
-export i32 text_copy(i32 id, char *out, i32 cap) { return runtime.send(UiOp::TEXT_COPY, id, (i32)out, cap, 0, 0, 0, "", ""); }
+// returns Ok(length), or a UI error for an invalid node/capacity. The app
+// names the buffer: nothing an app holds points into the server, so a text
+// longer than the buffer is cut, not read past.
+export Result<i32, UiError> text_copy(i32 id, char *out, i32 cap) {
+    Result<i32, UiError> result = Err(UiError::NodeNotFound(id));
+    runtime.send_result(UiOp::TEXT_COPY, id, (i32)out, cap, 0, 0, 0, "", "",
+                        (i32)(&result), sizeof(Result<i32, UiError>));
+    return result;
+}
 
 // set_text with a format: `%d` takes the next i32 argument, `%s` the next
 // as a char*, `%%` is a percent sign. (The server keeps its own copy of
@@ -74,16 +79,34 @@ export void set_text_fmt(i32 id, char *fmt, i32 a, i32 b) {
 
 // --- widgets --------------------------------------------------------------------------------
 
-export bool is_checked(i32 id) { return runtime.send(UiOp::IS_CHECKED, id, 0, 0, 0, 0, 0, "", "") != 0; }
+/** Reads a checkbox state, or returns an error for an invalid/non-checkbox node. */
+export Result<bool, UiError> is_checked(i32 id) {
+    Result<bool, UiError> result = Err(UiError::NodeNotFound(id));
+    runtime.send_result(UiOp::IS_CHECKED, id, 0, 0, 0, 0, 0, "", "",
+                        (i32)(&result), sizeof(Result<bool, UiError>));
+    return result;
+}
 export void set_checked(i32 id, i32 on) { runtime.send(UiOp::SET_CHECKED, id, on, 0, 0, 0, 0, "", ""); }
 
 export void input_set(i32 id, char *s) { runtime.send(UiOp::INPUT_SET, id, 0, 0, 0, 0, 0, s, ""); }
 export void area_append(i32 id, char *s) { runtime.send(UiOp::AREA_APPEND, id, 0, 0, 0, 0, 0, s, ""); }
 export void area_clear(i32 id) { runtime.send(UiOp::AREA_CLEAR, id, 0, 0, 0, 0, 0, "", ""); }
-export i32 area_lines(i32 id) { return runtime.send(UiOp::AREA_LINES, id, 0, 0, 0, 0, 0, "", ""); }
+/** Returns TextArea line count, or an error for an invalid/non-TextArea node. */
+export Result<i32, UiError> area_lines(i32 id) {
+    Result<i32, UiError> result = Err(UiError::NodeNotFound(id));
+    runtime.send_result(UiOp::AREA_LINES, id, 0, 0, 0, 0, 0, "", "",
+                        (i32)(&result), sizeof(Result<i32, UiError>));
+    return result;
+}
 
 export void list_set_items(i32 id, char *items) { runtime.send(UiOp::LIST_SET_ITEMS, id, 0, 0, 0, 0, 0, items, ""); }
-export i32 list_count(i32 id) { return runtime.send(UiOp::LIST_COUNT, id, 0, 0, 0, 0, 0, "", ""); }
+/** Returns List item count, or an error for an invalid/non-List node. */
+export Result<i32, UiError> list_count(i32 id) {
+    Result<i32, UiError> result = Err(UiError::NodeNotFound(id));
+    runtime.send_result(UiOp::LIST_COUNT, id, 0, 0, 0, 0, 0, "", "",
+                        (i32)(&result), sizeof(Result<i32, UiError>));
+    return result;
+}
 
 // A missing selection is Ok(None); an invalid node is Err(UiError).
 export Result<Option<i32>, UiError> list_selected(i32 id) {

@@ -73,8 +73,9 @@ void (Counter *c) click(i32 id) {
   アドレスを第一引数に渡すので、値レシーバ（move）は使えない（コンパイルエラー）。
 - **`ref={c->label}`** はそのノードの id をフィールドに書く。木を歩いて id を
   取り直すコードは要らない。
-- **テキストはアプリのバッファへ**：`ui.text_copy(id, out, cap)`。サーバの中を指す
-  ポインタは返ってこない（`char g_buf[...]` をモジュール変数に置く）。
+- **テキストはアプリのバッファへ**：`ui.text_copy(id, out, cap)` は
+  `Result<i32, UiError>` を返す。サーバの中を指すポインタは返ってこない
+  （`char g_buf[...]` をモジュール変数に置く）。
 - **省略できるプロパティ**: `x`/`y`（親原点）、`w`/`h`、`color`、`bold`、
   `gap`、`padding`、`onClick` 等は `elements.mln` のデフォルトが入る。
   `testId="..."` は automation 用の名前。
@@ -102,15 +103,17 @@ void (Counter *c) click(i32 id) {
 `annotations.mln`, `terminal.mln`）だけで、`src/runtime/`やwire contractは直接importしない。
 filesystemや一般process操作はMyStdLib `hosted/` を直接importし、FSの共有error型は
 `contracts/io/fs.contract.mln`からimportする。`ui` の引数・戻り値は
-**i32 と char\* のみ**
+wire 上では **i32 と char\*** を使う。
 通常のscalar値に加え、意味上の失敗や不在を区別するAPIはdata-only contractの
 `Result` / `Option`をcopy-outする。`Node*`などserver内部のポインタは跨がない。
 この面は既にメッセージ／syscall の client stub として実装されている。
 
-- テキスト: `set_text`, `text_copy(id, out, cap)`, `set_text_fmt(id, "%d / %s", a, b)`
+- テキスト: `set_text`, `text_copy(id, out, cap) -> Result<i32, UiError>`,
+  `set_text_fmt(id, "%d / %s", a, b)`
   （ラベルはポインタを保持するので、書式結果はラベルごとのバッファに置かれる）
-- ウィジェット: `is_checked`, `set_checked`, `input_set`, `area_append`,
-  `area_clear`, `list_set_items`, `list_selected` (`Result<Option<i32>, UiError>`),
+- ウィジェット: `is_checked` (`Result<bool, UiError>`), `set_checked`, `input_set`,
+  `area_append`, `area_clear`, `area_lines` / `list_count` (`Result<i32, UiError>`),
+  `list_set_items`, `list_selected` (`Result<Option<i32>, UiError>`),
   `list_item` (`Result<i32, UiError>`)
 - ウィンドウ: `focus`, `focus_window`, `show(win)`（自作ダイアログを載せる）,
   `close(win)`, `window_of`, `window_x/y`

@@ -28,6 +28,7 @@ import annotations from "@std/meta/annotations.mln";
 import { Annotations, AnnotationError } from "@std/meta/annotations.mln";
 import { UiError } from "../../../../contracts/ui/widget.contract.mln";
 import { Result } from "@std/core/result.mln";
+import { Option } from "@std/core/option.mln";
 
 // The instance this process runs (one per process): handlers get it as
 // their receiver. Requests carry it as `owner` too, but the OS replaces
@@ -96,15 +97,15 @@ export void on(i32 key, i32 kind, i32 fn) {
     handlers[i].fn = fn;
 }
 
-i32 lookup(i32 owner, i32 key, i32 kind) {
+Option<i32> lookup(i32 owner, i32 key, i32 kind) {
     i32 i = 0;
     while (i < handler_count) {
         if (handlers[i].fn != 0 && handlers[i].owner == owner && handlers[i].key == key && handlers[i].kind == kind) {
-            return handlers[i].fn;
+            return Some(handlers[i].fn);
         }
         i++;
     }
-    return 0;
+    return None;
 }
 
 void forget(i32 owner) {
@@ -198,14 +199,16 @@ void deliver(Event *ev) {
     if (ev->kind == EventKind::OPEN) { key = 0; }
     if (ev->kind == EventKind::CLOSE) { key = 0; }
     i32 self = current_owner;
-    i32 fn = lookup(self, key, ev->kind);
-    if (fn != 0) {
-        if (ev->kind == EventKind::OPEN) {
-            fn(self, (i32)(&ev->text[0]));
-        } else {
-            fn(self, ev->id, ev->arg);
-        }
-    }
+    case lookup(self, key, ev->kind) of {
+        Some(handler) -> ({
+            if (ev->kind == EventKind::OPEN) {
+                handler(self, (i32)(&ev->text[0]));
+            } else {
+                handler(self, ev->id, ev->arg);
+            }
+        });
+        None -> _;
+    };
     if (ev->kind == EventKind::CLOSE) {
         // The window is going away: after the app's own on_close, the
         // instance is done -- drop its handlers, tell the OS (it frees what
