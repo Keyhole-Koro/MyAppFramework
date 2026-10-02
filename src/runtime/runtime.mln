@@ -20,7 +20,7 @@ package runtime;
 // passed as is (the calling convention ignores trailing arguments).
 
 import app_transport from "transport.mln";
-import { Request, RequestDomain, Event, EventKind } from "../../../../contracts/myapp/message.contract.mln";
+import { Request, RequestDomain, RequestStatus, Event, EventKind } from "../../../../contracts/myapp/message.contract.mln";
 import { UiOp } from "../../../../contracts/myapp/ui.contract.mln";
 import { AppOp, KeyClaimError } from "../../../../contracts/myapp/lifecycle.contract.mln";
 import hosted_log from "@std/hosted/log.mln";
@@ -73,14 +73,14 @@ i32 HANDLERS_MAX = 256;
 struct Handler {
     i32 owner;
     i32 key;           // node id, KEY claim token, or 0 for OPEN / CLOSE
-    i32 kind;
+    EventKind kind;
     i32 fn;
 };
 Handler handlers[256];
 i32 handler_count = 0;
 
 // Register fn for (key, kind) on the current instance.
-export void on(i32 key, i32 kind, i32 fn) {
+export void on(i32 key, EventKind kind, i32 fn) {
     if (fn == 0) { return; }
     i32 i = 0;
     while (i < handler_count) {
@@ -97,7 +97,7 @@ export void on(i32 key, i32 kind, i32 fn) {
     handlers[i].fn = fn;
 }
 
-Option<i32> lookup(i32 owner, i32 key, i32 kind) {
+Option<i32> lookup(i32 owner, i32 key, EventKind kind) {
     i32 i = 0;
     while (i < handler_count) {
         if (handlers[i].fn != 0 && handlers[i].owner == owner && handlers[i].key == key && handlers[i].kind == kind) {
@@ -118,38 +118,37 @@ void forget(i32 owner) {
 
 // --- requests ------------------------------------------------------------------------------
 
-// Build and send one domain request as the current instance.
-i32 send_domain_result(i32 domain, i32 op, i32 a0, i32 a1, i32 a2, i32 a3, i32 a4, i32 a5, char *s0, char *s1, i32 result_out, i32 result_size) {
-    Request m;
-    m.domain = domain;
-    m.op = op;
-    m.owner = current_owner;
-    m.a0 = a0; m.a1 = a1; m.a2 = a2; m.a3 = a3; m.a4 = a4; m.a5 = a5;
-    m.s0 = s0;
-    m.s1 = s1;
-    m.result_out = result_out;
-    m.result_size = result_size;
-    return app_transport.request(&m);
+/** Creates a zero-filled UI request with safe empty string payloads. */
+export Request ui_request(i32 op) {
+    Request request = Request {};
+    request.domain = RequestDomain::UI;
+    request.op = op;
+    request.s0 = "";
+    request.s1 = "";
+    return request;
 }
 
-i32 send_domain(i32 domain, i32 op, i32 a0, i32 a1, i32 a2, i32 a3, i32 a4, i32 a5, char *s0, char *s1) {
-    return send_domain_result(domain, op, a0, a1, a2, a3, a4, a5, s0, s1, 0, 0);
+/** Creates a zero-filled application lifecycle request. */
+export Request app_request(i32 op) {
+    Request request = Request {};
+    request.domain = RequestDomain::APP;
+    request.op = op;
+    request.s0 = "";
+    request.s1 = "";
+    return request;
 }
 
-export i32 send(i32 op, i32 a0, i32 a1, i32 a2, i32 a3, i32 a4, i32 a5, char *s0, char *s1) {
-    return send_domain(RequestDomain::UI, op, a0, a1, a2, a3, a4, a5, s0, s1);
+/** Sends one fully described request as the current application instance. */
+export RequestStatus send(Request *request) {
+    request->owner = current_owner;
+    return app_transport.request(request);
 }
 
-export i32 send_result(i32 op, i32 a0, i32 a1, i32 a2, i32 a3, i32 a4, i32 a5, char *s0, char *s1, i32 result_out, i32 result_size) {
-    return send_domain_result(RequestDomain::UI, op, a0, a1, a2, a3, a4, a5, s0, s1, result_out, result_size);
-}
-
-export i32 app_send(i32 op, i32 a0, char *s0) {
-    return send_domain(RequestDomain::APP, op, a0, 0, 0, 0, 0, 0, s0, "");
-}
-
-export i32 app_send_result(i32 op, i32 a0, char *s0, i32 result_out, i32 result_size) {
-    return send_domain_result(RequestDomain::APP, op, a0, 0, 0, 0, 0, 0, s0, "", result_out, result_size);
+void send_app_value(i32 op, i32 a0, char *s0) {
+    Request request = app_request(op);
+    request.a0 = a0;
+    request.s0 = s0;
+    send(&request);
 }
 
 // --- lifecycle -----------------------------------------------------------------------------
@@ -166,21 +165,27 @@ export i32 start(i32 self, char *type) {
     if (app.next()) {
         i32 view = annotation_i32(app.fn());
         win = view(self);
-        if (win != 0) { app_send(AppOp::MAIN_WINDOW, win, ""); }
+        if (win != 0) { send_app_value(AppOp::MAIN_WINDOW, win, ""); }
     }
     Annotations timers = annotations.where("timer", type);
     while (timers.next()) {
         Result<i32, UiError> created = Err(UiError::TimerLimit);
-        send_result(UiOp::CREATE_TIMER, annotation_i32(timers.arg(0)), 0, 0, 0, 0, 0, "", "",
-                    (i32)(&created), sizeof(Result<i32, UiError>));
+        Request request = ui_request(UiOp::CREATE_TIMER);
+        request.a0 = annotation_i32(timers.arg(0));
+        request.result_out = (i32)(&created);
+        request.result_size = sizeof(Result<i32, UiError>);
+        send(&request);
         i32 id = case created of { Ok(value) -> value; Err(e) -> ({ fail_ui(e); 0; }); };
         on(id, EventKind::TIMER, annotation_i32(timers.fn()));
     }
     Annotations keys = annotations.where("key", type);
     while (keys.next()) {
         Result<i32, KeyClaimError> claimed = Err(KeyClaimError::TableFull);
-        app_send_result(AppOp::CLAIM_KEY, 0, annotation_text(keys.text(0)),
-                        (i32)(&claimed), sizeof(Result<i32, KeyClaimError>));
+        Request request = app_request(AppOp::CLAIM_KEY);
+        request.s0 = annotation_text(keys.text(0));
+        request.result_out = (i32)(&claimed);
+        request.result_size = sizeof(Result<i32, KeyClaimError>);
+        send(&request);
         case claimed of {
             Ok(token) -> on(token, EventKind::KEY, annotation_i32(keys.fn()));
             Err(_) -> log("Could not register app keyboard shortcut");
@@ -214,7 +219,7 @@ void deliver(Event *ev) {
         // instance is done -- drop its handlers, tell the OS (it frees what
         // the instance owned) and end.
         forget(self);
-        app_send(AppOp::EXIT, 0, "");
+        send_app_value(AppOp::EXIT, 0, "");
         app_transport.exit();
     }
 }

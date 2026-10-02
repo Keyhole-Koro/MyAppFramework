@@ -4,11 +4,13 @@ import runtime from "runtime/runtime.mln";
 import str from "@std/text/str.mln";
 import { InlineString } from "@std/text/inline_string.mln";
 import { InlineCString } from "@std/text/inline_c_string.mln";
+import ascii from "@std/text/ascii.mln";
 import { Option } from "@std/core/option.mln";
 import { Result } from "@std/core/result.mln";
 import { UiError } from "../../../contracts/ui/widget.contract.mln";
 import { UiOp } from "../../../contracts/myapp/ui.contract.mln";
 import { AppOp, AppError } from "../../../contracts/myapp/lifecycle.contract.mln";
+import { Request } from "../../../contracts/myapp/message.contract.mln";
 
 // The UI an application is allowed to talk to. Apps import this and the
 // element vocabulary (elements.mln, for markup) and nothing else, so the
@@ -25,15 +27,23 @@ import { AppOp, AppError } from "../../../contracts/myapp/lifecycle.contract.mln
 
 // --- text -------------------------------------------------------------------------------------
 
-export void set_text(i32 id, char *s) { runtime.send(UiOp::SET_TEXT, id, 0, 0, 0, 0, 0, s, ""); }
+export void set_text(i32 id, char *s) {
+    Request request = runtime.ui_request(UiOp::SET_TEXT);
+    request.a0 = id;
+    request.s0 = s;
+    runtime.send(&request);
+}
 // The node's text, copied into `out` (at most `cap` bytes incl. NUL);
 // returns Ok(length), or a UI error for an invalid node/capacity. The app
 // names the buffer: nothing an app holds points into the server, so a text
 // longer than the buffer is cut, not read past.
 export Result<i32, UiError> text_copy(i32 id, char *out, i32 cap) {
     Result<i32, UiError> result = Err(UiError::NodeNotFound(id));
-    runtime.send_result(UiOp::TEXT_COPY, id, (i32)out, cap, 0, 0, 0, "", "",
-                        (i32)(&result), sizeof(Result<i32, UiError>));
+    Request request = runtime.ui_request(UiOp::TEXT_COPY);
+    request.a0 = id; request.a1 = (i32)out; request.a2 = cap;
+    request.result_out = (i32)(&result);
+    request.result_size = sizeof(Result<i32, UiError>);
+    runtime.send(&request);
     return result;
 }
 
@@ -48,9 +58,9 @@ export void set_text_fmt(i32 id, char *fmt, i32 a, i32 b) {
     i32 next = 0;
     i32 i = 0;
     while (fmt[i] != 0) {
-        i32 c = fmt[i] & 0xFF;
+        i32 c = ascii.byte(fmt[i]);
         if (c == '%') {
-            i32 spec = fmt[i + 1] & 0xFF;
+            i32 spec = ascii.byte(fmt[i + 1]);
             i32 value = a;
             if (next == 1) { value = b; }
             if (spec == 'd') {
@@ -82,40 +92,69 @@ export void set_text_fmt(i32 id, char *fmt, i32 a, i32 b) {
 /** Reads a checkbox state, or returns an error for an invalid/non-checkbox node. */
 export Result<bool, UiError> is_checked(i32 id) {
     Result<bool, UiError> result = Err(UiError::NodeNotFound(id));
-    runtime.send_result(UiOp::IS_CHECKED, id, 0, 0, 0, 0, 0, "", "",
-                        (i32)(&result), sizeof(Result<bool, UiError>));
+    Request request = runtime.ui_request(UiOp::IS_CHECKED);
+    request.a0 = id;
+    request.result_out = (i32)(&result);
+    request.result_size = sizeof(Result<bool, UiError>);
+    runtime.send(&request);
     return result;
 }
-export void set_checked(i32 id, i32 on) { runtime.send(UiOp::SET_CHECKED, id, on, 0, 0, 0, 0, "", ""); }
+export void set_checked(i32 id, i32 on) {
+    Request request = runtime.ui_request(UiOp::SET_CHECKED);
+    request.a0 = id; request.a1 = on;
+    runtime.send(&request);
+}
 
-export void input_set(i32 id, char *s) { runtime.send(UiOp::INPUT_SET, id, 0, 0, 0, 0, 0, s, ""); }
-export void area_append(i32 id, char *s) { runtime.send(UiOp::AREA_APPEND, id, 0, 0, 0, 0, 0, s, ""); }
-export void area_clear(i32 id) { runtime.send(UiOp::AREA_CLEAR, id, 0, 0, 0, 0, 0, "", ""); }
+export void input_set(i32 id, char *s) {
+    Request request = runtime.ui_request(UiOp::INPUT_SET);
+    request.a0 = id; request.s0 = s;
+    runtime.send(&request);
+}
+export void area_append(i32 id, char *s) {
+    Request request = runtime.ui_request(UiOp::AREA_APPEND);
+    request.a0 = id; request.s0 = s;
+    runtime.send(&request);
+}
+export void area_clear(i32 id) {
+    Request request = runtime.ui_request(UiOp::AREA_CLEAR);
+    request.a0 = id;
+    runtime.send(&request);
+}
 /** Returns TextArea line count, or an error for an invalid/non-TextArea node. */
 export Result<i32, UiError> area_lines(i32 id) {
     Result<i32, UiError> result = Err(UiError::NodeNotFound(id));
-    runtime.send_result(UiOp::AREA_LINES, id, 0, 0, 0, 0, 0, "", "",
-                        (i32)(&result), sizeof(Result<i32, UiError>));
+    Request request = runtime.ui_request(UiOp::AREA_LINES);
+    request.a0 = id;
+    request.result_out = (i32)(&result);
+    request.result_size = sizeof(Result<i32, UiError>);
+    runtime.send(&request);
     return result;
 }
 
-export void list_set_items(i32 id, char *items) { runtime.send(UiOp::LIST_SET_ITEMS, id, 0, 0, 0, 0, 0, items, ""); }
+export void list_set_items(i32 id, char *items) {
+    Request request = runtime.ui_request(UiOp::LIST_SET_ITEMS);
+    request.a0 = id; request.s0 = items;
+    runtime.send(&request);
+}
 /** Returns List item count, or an error for an invalid/non-List node. */
 export Result<i32, UiError> list_count(i32 id) {
     Result<i32, UiError> result = Err(UiError::NodeNotFound(id));
-    runtime.send_result(UiOp::LIST_COUNT, id, 0, 0, 0, 0, 0, "", "",
-                        (i32)(&result), sizeof(Result<i32, UiError>));
+    Request request = runtime.ui_request(UiOp::LIST_COUNT);
+    request.a0 = id;
+    request.result_out = (i32)(&result);
+    request.result_size = sizeof(Result<i32, UiError>);
+    runtime.send(&request);
     return result;
 }
 
 // A missing selection is Ok(None); an invalid node is Err(UiError).
 export Result<Option<i32>, UiError> list_selected(i32 id) {
     Result<Option<i32>, UiError> result = Err(UiError::NodeNotFound(id));
-    runtime.send_result(
-        UiOp::LIST_SELECTED,
-        id, 0, 0, 0, 0, 0, "", "",
-        (i32)(&result), sizeof(Result<Option<i32>, UiError>)
-    );
+    Request request = runtime.ui_request(UiOp::LIST_SELECTED);
+    request.a0 = id;
+    request.result_out = (i32)(&result);
+    request.result_size = sizeof(Result<Option<i32>, UiError>);
+    runtime.send(&request);
     return result;
 }
 
@@ -123,58 +162,93 @@ export Result<Option<i32>, UiError> list_selected(i32 id) {
 // returns its length or a typed UI error.
 export Result<i32, UiError> list_item(i32 id, i32 index, char *out, i32 cap) {
     Result<i32, UiError> result = Err(UiError::InvalidIndex(index));
-    runtime.send_result(
-        UiOp::LIST_ITEM,
-        id, index, (i32)out, cap, 0, 0, "", "",
-        (i32)(&result), sizeof(Result<i32, UiError>)
-    );
+    Request request = runtime.ui_request(UiOp::LIST_ITEM);
+    request.a0 = id; request.a1 = index; request.a2 = (i32)out; request.a3 = cap;
+    request.result_out = (i32)(&result);
+    request.result_size = sizeof(Result<i32, UiError>);
+    runtime.send(&request);
     return result;
 }
 
 // --- focus and windows ------------------------------------------------------------------------
 
-export void focus(i32 id) { runtime.send(UiOp::FOCUS, id, 0, 0, 0, 0, 0, "", ""); }
-export void focus_window(i32 win) { runtime.send(UiOp::FOCUS_WINDOW, win, 0, 0, 0, 0, 0, "", ""); }
+export void focus(i32 id) {
+    Request request = runtime.ui_request(UiOp::FOCUS);
+    request.a0 = id;
+    runtime.send(&request);
+}
+export void focus_window(i32 win) {
+    Request request = runtime.ui_request(UiOp::FOCUS_WINDOW);
+    request.a0 = win;
+    runtime.send(&request);
+}
 
 // Close a window the app opened itself (a dialog). The app's own main
 // window is closed by the framework when the user closes it.
-export void close(i32 win) { runtime.send(UiOp::CLOSE, win, 0, 0, 0, 0, 0, "", ""); }
+export void close(i32 win) {
+    Request request = runtime.ui_request(UiOp::CLOSE);
+    request.a0 = win;
+    runtime.send(&request);
+}
 
 export Result<Option<i32>, UiError> window_of(i32 id) {
     Result<Option<i32>, UiError> result = Err(UiError::NodeNotFound(id));
-    runtime.send_result(UiOp::WINDOW_OF, id, 0, 0, 0, 0, 0, "", "",
-                        (i32)(&result), sizeof(Result<Option<i32>, UiError>));
+    Request request = runtime.ui_request(UiOp::WINDOW_OF);
+    request.a0 = id;
+    request.result_out = (i32)(&result);
+    request.result_size = sizeof(Result<Option<i32>, UiError>);
+    runtime.send(&request);
     return result;
 }
 
 export Result<i32, UiError> window_x(i32 win) {
     Result<i32, UiError> result = Err(UiError::NodeNotFound(win));
-    runtime.send_result(UiOp::WINDOW_X, win, 0, 0, 0, 0, 0, "", "",
-                        (i32)(&result), sizeof(Result<i32, UiError>));
+    Request request = runtime.ui_request(UiOp::WINDOW_X);
+    request.a0 = win;
+    request.result_out = (i32)(&result);
+    request.result_size = sizeof(Result<i32, UiError>);
+    runtime.send(&request);
     return result;
 }
 
 export Result<i32, UiError> window_y(i32 win) {
     Result<i32, UiError> result = Err(UiError::NodeNotFound(win));
-    runtime.send_result(UiOp::WINDOW_Y, win, 0, 0, 0, 0, 0, "", "",
-                        (i32)(&result), sizeof(Result<i32, UiError>));
+    Request request = runtime.ui_request(UiOp::WINDOW_Y);
+    request.a0 = win;
+    request.result_out = (i32)(&result);
+    request.result_size = sizeof(Result<i32, UiError>);
+    runtime.send(&request);
     return result;
 }
 
 // Mount a tree the app built (a dialog) on the desktop and focus it.
-export void show(i32 win) { runtime.send(UiOp::SHOW, win, 0, 0, 0, 0, 0, "", ""); }
+export void show(i32 win) {
+    Request request = runtime.ui_request(UiOp::SHOW);
+    request.a0 = win;
+    runtime.send(&request);
+}
 
 // Name a node for automation (dom-tester locators).
-export void test_id(i32 id, char *name) { runtime.send(UiOp::TEST_ID, id, 0, 0, 0, 0, 0, name, ""); }
+export void test_id(i32 id, char *name) {
+    Request request = runtime.ui_request(UiOp::TEST_ID);
+    request.a0 = id; request.s0 = name;
+    runtime.send(&request);
+}
 
 // --- keys ---------------------------------------------------------------------------------------
 
 // Simulate a key on the focused node; `type` 1 = down, 3 = char.
-export void send_key(i32 type, i32 code, i32 mods) { runtime.send(UiOp::SEND_KEY, type, code, mods, 0, 0, 0, "", ""); }
+export void send_key(i32 type, i32 code, i32 mods) {
+    Request request = runtime.ui_request(UiOp::SEND_KEY);
+    request.a0 = type; request.a1 = code; request.a2 = mods;
+    runtime.send(&request);
+}
 
 // --- colours -----------------------------------------------------------------------------------
 
-export i32 rgb(i32 r, i32 g, i32 b) { return runtime.send(UiOp::RGB, r, g, b, 0, 0, 0, "", ""); }
+export i32 rgb(i32 r, i32 g, i32 b) {
+    return (r << 16) | (g << 8) | b;
+}
 
 // --- other apps ---------------------------------------------------------------------------------
 
@@ -185,7 +259,10 @@ export i32 rgb(i32 r, i32 g, i32 b) { return runtime.send(UiOp::RGB, r, g, b, 0,
  */
 export Result<Option<i32>, AppError> open(char *path) {
     Result<Option<i32>, AppError> result = Err(AppError::NoOpenHandler);
-    runtime.app_send_result(AppOp::OPEN, 0, path, (i32)(&result),
-                            sizeof(Result<Option<i32>, AppError>));
+    Request request = runtime.app_request(AppOp::OPEN);
+    request.s0 = path;
+    request.result_out = (i32)(&result);
+    request.result_size = sizeof(Result<Option<i32>, AppError>);
+    runtime.send(&request);
     return result;
 }

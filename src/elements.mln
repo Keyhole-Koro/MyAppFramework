@@ -2,7 +2,7 @@ package elements;
 
 import runtime from "runtime/runtime.mln";
 import { UiOp } from "../../../contracts/myapp/ui.contract.mln";
-import { EventKind } from "../../../contracts/myapp/message.contract.mln";
+import { Request, EventKind } from "../../../contracts/myapp/message.contract.mln";
 import { Result } from "@std/core/result.mln";
 import { UiError } from "../../../contracts/ui/widget.contract.mln";
 
@@ -28,14 +28,15 @@ import { UiError } from "../../../contracts/ui/widget.contract.mln";
 // no markup changes.
 
 // Children of an element are attached with the `append_child` in scope.
-Result<i32, UiError> create(i32 op, i32 a0, i32 a1, i32 a2, i32 a3, i32 a4, i32 a5, char *s0, char *s1) {
-    Result<i32, UiError> result = Err(UiError::UnknownOperation(op));
-    runtime.send_result(op, a0, a1, a2, a3, a4, a5, s0, s1,
-                        (i32)(&result), sizeof(Result<i32, UiError>));
+Result<i32, UiError> create(Request request) {
+    Result<i32, UiError> result = Err(UiError::UnknownOperation(request.op));
+    request.result_out = (i32)(&result);
+    request.result_size = sizeof(Result<i32, UiError>);
+    runtime.send(&request);
     return result;
 }
 
-void register_handler(Result<i32, UiError> *result, i32 kind, i32 fn) {
+void register_handler(Result<i32, UiError> *result, EventKind kind, i32 fn) {
     case *result of {
         Ok(id) -> ({ runtime.on(id, kind, fn); });
         Err(_) -> _;
@@ -60,7 +61,10 @@ export void unwrap_append(Result<_, UiError> result) {
 }
 
 export Result<_, UiError> append_child(i32 parent, i32 child) {
-    return case create(UiOp::APPEND_CHILD, parent, child, 0, 0, 0, 0, "", "") of {
+    Request request = runtime.ui_request(UiOp::APPEND_CHILD);
+    request.a0 = parent;
+    request.a1 = child;
+    return case create(request) of {
         Ok(ignored) -> Ok(_);
         Err(e) -> Err(e);
     };
@@ -76,7 +80,12 @@ export Result<_, UiError> append_child(i32 parent, i32 child) {
  * @param testId Stable automation locator id (default none).
  * @return DOM Node ID.
  */
-export Result<i32, UiError> Window(char *title, i32 x = 0, i32 y = 0, i32 w = 400, i32 h = 300, char *testId = "") { return create(UiOp::CREATE_WINDOW, x, y, w, h, 0, 0, title, testId); }
+export Result<i32, UiError> Window(char *title, i32 x = 0, i32 y = 0, i32 w = 400, i32 h = 300, char *testId = "") {
+    Request request = runtime.ui_request(UiOp::CREATE_WINDOW);
+    request.a0 = x; request.a1 = y; request.a2 = w; request.a3 = h;
+    request.s0 = title; request.s1 = testId;
+    return create(request);
+}
 
 /**
  * Lowers JSX `<Button text="..." x={...} y={...} w={...} h={...} onClick={...} testId="..." />`.
@@ -90,7 +99,10 @@ export Result<i32, UiError> Window(char *title, i32 x = 0, i32 y = 0, i32 w = 40
  * @return DOM Node ID.
  */
 export Result<i32, UiError> Button(char *text, i32 x = 0, i32 y = 0, i32 w = 90, i32 h = 34, i32 onClick = 0, char *testId = "") {
-    Result<i32, UiError> result = create(UiOp::CREATE_BUTTON, x, y, w, h, 0, 0, text, testId);
+    Request request = runtime.ui_request(UiOp::CREATE_BUTTON);
+    request.a0 = x; request.a1 = y; request.a2 = w; request.a3 = h;
+    request.s0 = text; request.s1 = testId;
+    Result<i32, UiError> result = create(request);
     register_handler(&result, EventKind::CLICK, onClick);
     return result;
 }
@@ -108,7 +120,10 @@ export Result<i32, UiError> Button(char *text, i32 x = 0, i32 y = 0, i32 w = 90,
  * @return DOM Node ID.
  */
 export Result<i32, UiError> PrimaryButton(char *text, i32 x = 0, i32 y = 0, i32 w = 90, i32 h = 34, i32 onClick = 0, char *testId = "") {
-    Result<i32, UiError> result = create(UiOp::CREATE_PRIMARY_BUTTON, x, y, w, h, 0, 0, text, testId);
+    Request request = runtime.ui_request(UiOp::CREATE_PRIMARY_BUTTON);
+    request.a0 = x; request.a1 = y; request.a2 = w; request.a3 = h;
+    request.s0 = text; request.s1 = testId;
+    Result<i32, UiError> result = create(request);
     register_handler(&result, EventKind::CLICK, onClick);
     return result;
 }
@@ -121,7 +136,12 @@ export Result<i32, UiError> PrimaryButton(char *text, i32 x = 0, i32 y = 0, i32 
  * @param testId Stable automation locator id (default none).
  * @return DOM Node ID.
  */
-export Result<i32, UiError> Text(char *text, i32 x = 0, i32 y = 0, char *testId = "") { return create(UiOp::CREATE_TEXT, x, y, 0, 0, 0, 0, text, testId); }
+export Result<i32, UiError> Text(char *text, i32 x = 0, i32 y = 0, char *testId = "") {
+    Request request = runtime.ui_request(UiOp::CREATE_TEXT);
+    request.a0 = x; request.a1 = y;
+    request.s0 = text; request.s1 = testId;
+    return create(request);
+}
 
 /**
  * Lowers JSX `<Label text="..." x={...} y={...} color={...} bold={...} testId="..." />`.
@@ -134,7 +154,12 @@ export Result<i32, UiError> Text(char *text, i32 x = 0, i32 y = 0, char *testId 
  * @param testId Stable automation locator id (default none).
  * @return DOM Node ID.
  */
-export Result<i32, UiError> Label(char *text, i32 x = 0, i32 y = 0, i32 color = 0, i32 bold = 0, char *testId = "") { return create(UiOp::CREATE_LABEL, x, y, color, bold, 0, 0, text, testId); }
+export Result<i32, UiError> Label(char *text, i32 x = 0, i32 y = 0, i32 color = 0, i32 bold = 0, char *testId = "") {
+    Request request = runtime.ui_request(UiOp::CREATE_LABEL);
+    request.a0 = x; request.a1 = y; request.a2 = color; request.a3 = bold;
+    request.s0 = text; request.s1 = testId;
+    return create(request);
+}
 
 /**
  * Lowers JSX `<Box x={...} y={...} w={...} h={...} background={...} border={...} />`.
@@ -147,7 +172,12 @@ export Result<i32, UiError> Label(char *text, i32 x = 0, i32 y = 0, i32 color = 
  * @return DOM Node ID.
  */
 export Result<i32, UiError> Box(i32 x = 0, i32 y = 0, i32 w = 100, i32 h = 100,
-               i32 background = 0, i32 border = 0) { return create(UiOp::CREATE_BOX, x, y, w, h, background, border, "", ""); }
+               i32 background = 0, i32 border = 0) {
+    Request request = runtime.ui_request(UiOp::CREATE_BOX);
+    request.a0 = x; request.a1 = y; request.a2 = w; request.a3 = h;
+    request.a4 = background; request.a5 = border;
+    return create(request);
+}
 
 /**
  * Lowers JSX `<Panel x={...} y={...} w={...} h={...} radius={...} />`.
@@ -158,7 +188,11 @@ export Result<i32, UiError> Box(i32 x = 0, i32 y = 0, i32 w = 100, i32 h = 100,
  * @param radius Corner radius in logical pixels (default 0).
  * @return DOM Node ID.
  */
-export Result<i32, UiError> Panel(i32 x = 0, i32 y = 0, i32 w = 100, i32 h = 100, i32 radius = 0) { return create(UiOp::CREATE_PANEL, x, y, w, h, radius, 0, "", ""); }
+export Result<i32, UiError> Panel(i32 x = 0, i32 y = 0, i32 w = 100, i32 h = 100, i32 radius = 0) {
+    Request request = runtime.ui_request(UiOp::CREATE_PANEL);
+    request.a0 = x; request.a1 = y; request.a2 = w; request.a3 = h; request.a4 = radius;
+    return create(request);
+}
 
 /**
  * Lowers JSX `<Column x={...} y={...} w={...} h={...} padding={...} gap={...} />`.
@@ -171,7 +205,12 @@ export Result<i32, UiError> Panel(i32 x = 0, i32 y = 0, i32 w = 100, i32 h = 100
  * @return DOM Node ID.
  */
 export Result<i32, UiError> Column(i32 x = 0, i32 y = 0, i32 w = 100, i32 h = 100,
-                  i32 padding = 0, i32 gap = 0) { return create(UiOp::CREATE_COLUMN, x, y, w, h, padding, gap, "", ""); }
+                  i32 padding = 0, i32 gap = 0) {
+    Request request = runtime.ui_request(UiOp::CREATE_COLUMN);
+    request.a0 = x; request.a1 = y; request.a2 = w; request.a3 = h;
+    request.a4 = padding; request.a5 = gap;
+    return create(request);
+}
 
 /**
  * Lowers JSX `<Row x={...} y={...} w={...} h={...} padding={...} gap={...} />`.
@@ -184,7 +223,12 @@ export Result<i32, UiError> Column(i32 x = 0, i32 y = 0, i32 w = 100, i32 h = 10
  * @return DOM Node ID.
  */
 export Result<i32, UiError> Row(i32 x = 0, i32 y = 0, i32 w = 100, i32 h = 34,
-               i32 padding = 0, i32 gap = 0) { return create(UiOp::CREATE_ROW, x, y, w, h, padding, gap, "", ""); }
+               i32 padding = 0, i32 gap = 0) {
+    Request request = runtime.ui_request(UiOp::CREATE_ROW);
+    request.a0 = x; request.a1 = y; request.a2 = w; request.a3 = h;
+    request.a4 = padding; request.a5 = gap;
+    return create(request);
+}
 
 /**
  * Lowers JSX `<TextInput placeholder="..." x={...} y={...} w={...} h={...} capacity={...} onChange={...} testId="..." />`.
@@ -199,7 +243,10 @@ export Result<i32, UiError> Row(i32 x = 0, i32 y = 0, i32 w = 100, i32 h = 34,
  * @return DOM Node ID.
  */
 export Result<i32, UiError> TextInput(char *placeholder, i32 x = 0, i32 y = 0, i32 w = 200, i32 h = 34, i32 capacity = 64, i32 onChange = 0, char *testId = "") {
-    Result<i32, UiError> result = create(UiOp::CREATE_TEXT_INPUT, x, y, w, h, capacity, 0, placeholder, testId);
+    Request request = runtime.ui_request(UiOp::CREATE_TEXT_INPUT);
+    request.a0 = x; request.a1 = y; request.a2 = w; request.a3 = h; request.a4 = capacity;
+    request.s0 = placeholder; request.s1 = testId;
+    Result<i32, UiError> result = create(request);
     register_handler(&result, EventKind::CHANGE, onChange);
     return result;
 }
@@ -215,7 +262,10 @@ export Result<i32, UiError> TextInput(char *placeholder, i32 x = 0, i32 y = 0, i
  * @return DOM Node ID.
  */
 export Result<i32, UiError> Checkbox(char *text, i32 x = 0, i32 y = 0, i32 checked = 0, i32 onClick = 0, char *testId = "") {
-    Result<i32, UiError> result = create(UiOp::CREATE_CHECKBOX, x, y, checked, 0, 0, 0, text, testId);
+    Request request = runtime.ui_request(UiOp::CREATE_CHECKBOX);
+    request.a0 = x; request.a1 = y; request.a2 = checked;
+    request.s0 = text; request.s1 = testId;
+    Result<i32, UiError> result = create(request);
     register_handler(&result, EventKind::CLICK, onClick);
     return result;
 }
@@ -227,7 +277,11 @@ export Result<i32, UiError> Checkbox(char *text, i32 x = 0, i32 y = 0, i32 check
  * @param w Logical width (default 100).
  * @return DOM Node ID.
  */
-export Result<i32, UiError> Separator(i32 x = 0, i32 y = 0, i32 w = 100) { return create(UiOp::CREATE_SEPARATOR, x, y, w, 0, 0, 0, "", ""); }
+export Result<i32, UiError> Separator(i32 x = 0, i32 y = 0, i32 w = 100) {
+    Request request = runtime.ui_request(UiOp::CREATE_SEPARATOR);
+    request.a0 = x; request.a1 = y; request.a2 = w;
+    return create(request);
+}
 
 /**
  * Lowers JSX `<Timer interval={...} onTick={...} />`.
@@ -236,7 +290,9 @@ export Result<i32, UiError> Separator(i32 x = 0, i32 y = 0, i32 w = 100) { retur
  * @return DOM Node ID.
  */
 export Result<i32, UiError> Timer(i32 interval, i32 onTick) {
-    Result<i32, UiError> result = create(UiOp::CREATE_TIMER, interval, 0, 0, 0, 0, 0, "", "");
+    Request request = runtime.ui_request(UiOp::CREATE_TIMER);
+    request.a0 = interval;
+    Result<i32, UiError> result = create(request);
     register_handler(&result, EventKind::TIMER, onTick);
     return result;
 }
@@ -255,7 +311,11 @@ export Result<i32, UiError> Timer(i32 interval, i32 onTick) {
  * @return DOM Node ID.
  */
 export Result<i32, UiError> TextArea(char *name, i32 x = 0, i32 y = 0, i32 w = 300, i32 h = 200, i32 capacity = 1024, i32 readonly = 0, i32 onChange = 0, char *testId = "") {
-    Result<i32, UiError> result = create(UiOp::CREATE_TEXT_AREA, x, y, w, h, capacity, readonly, name, testId);
+    Request request = runtime.ui_request(UiOp::CREATE_TEXT_AREA);
+    request.a0 = x; request.a1 = y; request.a2 = w; request.a3 = h;
+    request.a4 = capacity; request.a5 = readonly;
+    request.s0 = name; request.s1 = testId;
+    Result<i32, UiError> result = create(request);
     register_handler(&result, EventKind::CHANGE, onChange);
     return result;
 }
@@ -276,7 +336,10 @@ export Result<i32, UiError> TextArea(char *name, i32 x = 0, i32 y = 0, i32 w = 3
  * @return DOM Node ID.
  */
 export Result<i32, UiError> List(char *name, i32 x = 0, i32 y = 0, i32 w = 300, i32 h = 200, i32 capacity = 1024, i32 onChange = 0, i32 onActivate = 0, char *testId = "") {
-    Result<i32, UiError> result = create(UiOp::CREATE_LIST, x, y, w, h, capacity, 0, name, testId);
+    Request request = runtime.ui_request(UiOp::CREATE_LIST);
+    request.a0 = x; request.a1 = y; request.a2 = w; request.a3 = h; request.a4 = capacity;
+    request.s0 = name; request.s1 = testId;
+    Result<i32, UiError> result = create(request);
     register_handler(&result, EventKind::CHANGE, onChange);
     register_handler(&result, EventKind::ACTIVATE, onActivate);
     return result;
