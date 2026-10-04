@@ -28,7 +28,7 @@ import annotations from "@std/meta/annotations.mln";
 import { Annotations, AnnotationError } from "@std/meta/annotations.mln";
 import { UiError } from "../../../../contracts/ui/widget.contract.mln";
 import { Result } from "@std/core/result.mln";
-import { Option } from "@std/core/option.mln";
+import { CodeAddress } from "@std/core/address.mln";
 
 // The instance this process runs (one per process): handlers get it as
 // their receiver. Requests carry it as `owner` too, but the OS replaces
@@ -40,6 +40,13 @@ i32 annotation_i32(Result<i32, AnnotationError> value) {
     return case value of {
         Ok(v) -> v;
         Err(_) -> 0;
+    };
+}
+
+CodeAddress annotation_code(Result<CodeAddress, AnnotationError> value) {
+    return case value of {
+        Ok(v) -> v;
+        Err(_) -> CodeAddress(0);
     };
 }
 
@@ -74,17 +81,17 @@ struct Handler {
     i32 owner;
     i32 key;           // node id, KEY claim token, or 0 for OPEN / CLOSE
     EventKind kind;
-    i32 fn;
+    fn(i32 owner, i32 id, i32 arg) -> void callback;
 };
 Handler handlers[256];
 i32 handler_count = 0;
 
 // Register fn for (key, kind) on the current instance.
-export void on(i32 key, EventKind kind, i32 fn) {
-    if (fn == 0) { return; }
+export void on(i32 key, EventKind kind, fn(i32 owner, i32 id, i32 arg) -> void callback) {
+    if (callback == 0) { return; }
     i32 i = 0;
     while (i < handler_count) {
-        if (handlers[i].fn == 0) { break; }
+        if (handlers[i].callback == 0) { break; }
         i++;
     }
     if (i == handler_count) {
@@ -94,24 +101,24 @@ export void on(i32 key, EventKind kind, i32 fn) {
     handlers[i].owner = current_owner;
     handlers[i].key = key;
     handlers[i].kind = kind;
-    handlers[i].fn = fn;
+    handlers[i].callback = callback;
 }
 
-Option<i32> lookup(i32 owner, i32 key, EventKind kind) {
+fn(i32 owner, i32 id, i32 arg) -> void lookup(i32 owner, i32 key, EventKind kind) {
     i32 i = 0;
     while (i < handler_count) {
-        if (handlers[i].fn != 0 && handlers[i].owner == owner && handlers[i].key == key && handlers[i].kind == kind) {
-            return Some(handlers[i].fn);
+        if (handlers[i].callback != 0 && handlers[i].owner == owner && handlers[i].key == key && handlers[i].kind == kind) {
+            return handlers[i].callback;
         }
         i++;
     }
-    return None;
+    return 0;
 }
 
 void forget(i32 owner) {
     i32 i = 0;
     while (i < handler_count) {
-        if (handlers[i].owner == owner) { handlers[i].fn = 0; }
+        if (handlers[i].owner == owner) { handlers[i].callback = 0; }
         i++;
     }
 }
@@ -163,7 +170,7 @@ export i32 start(i32 self, char *type) {
     i32 win = 0;
     Annotations app = annotations.where("app", type);
     if (app.next()) {
-        i32 view = annotation_i32(app.fn());
+        fn(i32 self) -> i32 view = (fn(i32 self) -> i32)annotation_code(app.fn());
         win = view(self);
         if (win != 0) { send_app_value(AppOp::MAIN_WINDOW, win, ""); }
     }
@@ -176,7 +183,8 @@ export i32 start(i32 self, char *type) {
         request.result_size = sizeof(Result<i32, UiError>);
         send(&request);
         i32 id = case created of { Ok(value) -> value; Err(e) -> ({ fail_ui(e); 0; }); };
-        on(id, EventKind::TIMER, annotation_i32(timers.fn()));
+        on(id, EventKind::TIMER,
+           (fn(i32 owner, i32 id, i32 arg) -> void)annotation_code(timers.fn()));
     }
     Annotations keys = annotations.where("key", type);
     while (keys.next()) {
@@ -187,14 +195,21 @@ export i32 start(i32 self, char *type) {
         request.result_size = sizeof(Result<i32, KeyClaimError>);
         send(&request);
         case claimed of {
-            Ok(token) -> on(token, EventKind::KEY, annotation_i32(keys.fn()));
+            Ok(token) -> on(token, EventKind::KEY,
+                            (fn(i32 owner, i32 id, i32 arg) -> void)annotation_code(keys.fn()));
             Err(_) -> log("Could not register app keyboard shortcut");
         };
     }
     Annotations opens = annotations.where("open", type);
-    if (opens.next()) { on(0, EventKind::OPEN, annotation_i32(opens.fn())); }
+    if (opens.next()) {
+        on(0, EventKind::OPEN,
+           (fn(i32 owner, i32 id, i32 arg) -> void)annotation_code(opens.fn()));
+    }
     Annotations closes = annotations.where("on_close", type);
-    if (closes.next()) { on(0, EventKind::CLOSE, annotation_i32(closes.fn())); }
+    if (closes.next()) {
+        on(0, EventKind::CLOSE,
+           (fn(i32 owner, i32 id, i32 arg) -> void)annotation_code(closes.fn()));
+    }
     return win;
 }
 
@@ -204,16 +219,14 @@ void deliver(Event *ev) {
     if (ev->kind == EventKind::OPEN) { key = 0; }
     if (ev->kind == EventKind::CLOSE) { key = 0; }
     i32 self = current_owner;
-    case lookup(self, key, ev->kind) of {
-        Some(handler) -> ({
-            if (ev->kind == EventKind::OPEN) {
-                handler(self, (i32)(&ev->text[0]));
-            } else {
-                handler(self, ev->id, ev->arg);
-            }
-        });
-        None -> _;
-    };
+    fn(i32 owner, i32 id, i32 arg) -> void handler = lookup(self, key, ev->kind);
+    if (handler != 0) {
+        if (ev->kind == EventKind::OPEN) {
+            handler(self, (i32)(&ev->text[0]), 0);
+        } else {
+            handler(self, ev->id, ev->arg);
+        }
+    }
     if (ev->kind == EventKind::CLOSE) {
         // The window is going away: after the app's own on_close, the
         // instance is done -- drop its handlers, tell the OS (it frees what

@@ -1,5 +1,7 @@
 package annotations;
 
+import { CodeAddress } from "@std/core/address.mln";
+
 // The annotations an application is written with -- declarations only.
 //
 //     import { app, timer, key } from ".../annotations.mln";
@@ -33,20 +35,20 @@ package annotations;
 // the window and routes the window's events to the instance.
 // `single`: launching it again focuses the running instance instead.
 // `name`: the launcher label (default: the type's name).
-export void app(i32 view, char *type, i32 size, bool single = false, char *name = "");
+export void app(CodeAddress view, char *type, i32 size, bool single = false, char *name = "");
 
 // fn(self) every `ms` milliseconds while an instance is mounted.
-export void timer(i32 fn, char *type, i32 size, i32 ms);
+export void timer(CodeAddress fn, char *type, i32 size, i32 ms);
 
 // fn(self, id, code | mods << 16) when the key is pressed while the type's
 // window is active. "Ctrl", "Shift", "Alt" and a key: a character, "Enter",
 // "Esc", "Tab", "Space", "Left"..., "F1".."F12".
-export void key(i32 fn, char *type, i32 size, char *combo);
+export void key(CodeAddress fn, char *type, i32 size, char *combo);
 
 // fn(self, path) when another app calls ui.open(path). A single-instance
 // app's running instance receives it; otherwise a new one is started.
-export void open(i32 fn, char *type, i32 size);
+export void open(CodeAddress fn, char *type, i32 size);
 
 // fn(self) when the user closes the window, before the framework frees
 // the instance and everything it created.
-export void on_close(i32 fn, char *type, i32 size);
+export void on_close(CodeAddress fn, char *type, i32 size);

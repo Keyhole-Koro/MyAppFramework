@@ -8,9 +8,11 @@ package app_transport;
 
 import { os_call, sys_wait_notification, sys_exit } from "@std/platform/myos/syscall.masm";
 import { OsService } from "../../../../contracts/myos/services.contract.mln";
-import { Request, RequestStatus, Event, TransportSignal } from "../../../../contracts/myapp/message.contract.mln";
+import { Request, Event, TransportSignal } from "../../../../contracts/myapp/message.contract.mln";
 
-export RequestStatus request(Request *m) {
+// The syscall reply is an ABI word. runtime.send() converts it to the public
+// RequestStatus enum at this boundary.
+export i32 request(Request *m) {
     // The shared request ring can be briefly full while several applications
     // are mounting. A rejected enqueue has no reply, so retry it instead of
     // entering the reply wait with no request in flight.
