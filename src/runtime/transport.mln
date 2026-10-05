@@ -7,8 +7,8 @@ package app_transport;
 // OS at the boundary.
 
 import { os_call, sys_wait_notification, sys_exit } from "@std/platform/myos/syscall.masm";
-import { OsService } from "../../../../contracts/myos/services.contract.mln";
-import { Request, Event, TransportSignal } from "../../../../contracts/myapp/message.contract.mln";
+import { OsService } from "@contracts/myos/services.contract.mln";
+import { Request, Event, TransportSignal } from "@contracts/myapp/message.contract.mln";
 
 // The syscall reply is an ABI word. runtime.send() converts it to the public
 // RequestStatus enum at this boundary.

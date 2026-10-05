@@ -5,10 +5,10 @@ package terminal;
 // MyStdLib/hosted/process.mln.
 
 import { os_call } from "@std/platform/myos/syscall.masm";
-import { OsService } from "../../../contracts/myos/services.contract.mln";
+import { OsService } from "@contracts/myos/services.contract.mln";
 import { Result } from "@std/core/result.mln";
-import { SpawnError } from "../../../contracts/process/spawn.contract.mln";
-import { ProcSpawnArgs, ProcBindArgs, ProcUnbindArgs } from "../../../contracts/myos/process-args.contract.mln";
+import { SpawnError } from "@contracts/process/spawn.contract.mln";
+import { ProcSpawnArgs, ProcBindArgs, ProcUnbindArgs } from "@contracts/myos/process-args.contract.mln";
 
 // Start it with its stdout already going to TextArea `node` (one of
 // ours): bound before it runs, so its first output cannot slip past.

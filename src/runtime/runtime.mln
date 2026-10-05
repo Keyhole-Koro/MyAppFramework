@@ -20,13 +20,13 @@ package runtime;
 // passed as is (the calling convention ignores trailing arguments).
 
 import app_transport from "transport.mln";
-import { Request, RequestDomain, RequestStatus, Event, EventKind } from "../../../../contracts/myapp/message.contract.mln";
-import { UiOp } from "../../../../contracts/myapp/ui.contract.mln";
-import { AppOp, KeyClaimError } from "../../../../contracts/myapp/lifecycle.contract.mln";
+import { Request, RequestDomain, RequestStatus, Event, EventKind } from "@contracts/myapp/message.contract.mln";
+import { UiOp } from "@contracts/myapp/ui.contract.mln";
+import { AppOp, KeyClaimError } from "@contracts/myapp/lifecycle.contract.mln";
 import hosted_log from "@std/hosted/log.mln";
 import annotations from "@std/meta/annotations.mln";
 import { Annotations, AnnotationError } from "@std/meta/annotations.mln";
-import { UiError } from "../../../../contracts/ui/widget.contract.mln";
+import { UiError } from "@contracts/ui/widget.contract.mln";
 import { Result } from "@std/core/result.mln";
 import { CodeAddress } from "@std/core/address.mln";
 

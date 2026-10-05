@@ -7,10 +7,10 @@ import { InlineCString } from "@std/text/inline_c_string.mln";
 import ascii from "@std/text/ascii.mln";
 import { Option } from "@std/core/option.mln";
 import { Result } from "@std/core/result.mln";
-import { UiError } from "../../../contracts/ui/widget.contract.mln";
-import { UiOp } from "../../../contracts/myapp/ui.contract.mln";
-import { AppOp, AppError } from "../../../contracts/myapp/lifecycle.contract.mln";
-import { Request } from "../../../contracts/myapp/message.contract.mln";
+import { UiError } from "@contracts/ui/widget.contract.mln";
+import { UiOp } from "@contracts/myapp/ui.contract.mln";
+import { AppOp, AppError } from "@contracts/myapp/lifecycle.contract.mln";
+import { Request } from "@contracts/myapp/message.contract.mln";
 
 // The UI an application is allowed to talk to. Apps import this and the
 // element vocabulary (elements.mln, for markup) and nothing else, so the
