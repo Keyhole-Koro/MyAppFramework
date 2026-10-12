@@ -33,6 +33,20 @@ export void set_text(i32 id, char *s) {
     request.s0 = s;
     runtime.send(&request);
 }
+
+/** Shows a failure as `what: <message>` (`delete failed: disk full`).
+ * @param id Node whose text is set, typically a status line.
+ * @param what What failed.
+ * @param message Why, typically an error's `describe()`.
+ */
+export void set_error(i32 id, char *what, char *message) {
+    InlineCString<96> line = InlineCString<96> {};
+    line.clear();
+    line.append(str.from_c(what));
+    line.append(": ");
+    line.append(str.from_c(message));
+    set_text(id, line.as_ptr());
+}
 // The node's text, copied into `out` (at most `cap` bytes incl. NUL);
 // returns Ok(length), or a UI error for an invalid node/capacity. The app
 // names the buffer: nothing an app holds points into the server, so a text
