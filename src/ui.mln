@@ -264,6 +264,14 @@ export i32 rgb(i32 r, i32 g, i32 b) {
     return (r << 16) | (g << 8) | b;
 }
 
+// Theme colours for the colour attributes: `color={ui.TEXT_SECONDARY}`.
+// Apps do not see the OS theme (@os/ui/theme.mln), so these repeat its
+// values; keep them in step when the theme changes.
+export const i32 TEXT_PRIMARY = 0x1F2328;   // body text (the default)
+export const i32 TEXT_SECONDARY = 0x6B7280; // hints, captions, status lines
+export const i32 TEXT_DISABLED = 0xA0A6B0;  // unavailable items
+export const i32 ACCENT = 0x3B82F6;         // highlights and primary actions
+
 // --- other apps ---------------------------------------------------------------------------------
 
 /** Hand a path to whichever app declares @open.
