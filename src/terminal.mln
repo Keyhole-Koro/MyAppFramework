@@ -4,7 +4,7 @@ package terminal;
 // stdout to one of this app's TextAreas. Generic process control lives in
 // MyStdLib/hosted/process.mln.
 
-import { os_call } from "@std/platform/myos/syscall.masm";
+import myos_service from "@std/platform/myos/service.mln";
 import { OsService } from "@contracts/myos/services.contract.mln";
 import { Result } from "@std/core/result.mln";
 import { SpawnError } from "@contracts/process/spawn.contract.mln";
@@ -17,17 +17,17 @@ export Result<i32, SpawnError> spawn_bound(char *path, i32 node) {
     ProcSpawnArgs<Result<i32, SpawnError>> args = ProcSpawnArgs<Result<i32, SpawnError>> {
         path: path, stdout_node: node, result_out: &result
     };
-    os_call(OsService::PROC_SPAWN, (i32)(&args));
+    myos_service.call(OsService::PROC_SPAWN, (i32)(&args));
     return result;
 }
 
 // Send the process's stdout to TextArea `node` (one of ours).
 export void bind(i32 pid, i32 node) {
     ProcBindArgs args = ProcBindArgs { pid: pid, output_node: node };
-    os_call(OsService::PROC_BIND, (i32)(&args));
+    myos_service.call(OsService::PROC_BIND, (i32)(&args));
 }
 
 export void unbind(i32 pid) {
     ProcUnbindArgs args = ProcUnbindArgs { pid: pid };
-    os_call(OsService::PROC_UNBIND, (i32)(&args));
+    myos_service.call(OsService::PROC_UNBIND, (i32)(&args));
 }

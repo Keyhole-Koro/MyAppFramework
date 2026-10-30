@@ -4,30 +4,77 @@ import allocator from "@std/memory/allocator.mln";
 import { sys_sbrk } from "@std/platform/myos/syscall.masm";
 import { AllocationError } from "@std/memory/allocator.mln";
 import { Result } from "@std/core/result.mln";
+import { Mutex } from "@std/sync/mutex.mln";
+import { SyscallStatus } from "@contracts/myos/syscall.contract.mln";
 
 // A process-local first-fit heap over sbrk. Headers are two words:
 // payload size followed by the next-free pointer.
 i32 HEADER_SIZE = 8;
 i32 g_free_head = 0;
+// Zero is MutexState::Unlocked, so static initialization is sufficient.
+Mutex g_heap_lock;
 
+/**
+ * Rounds an allocation size up to the allocator's four-byte alignment.
+ * @param size Positive requested payload bytes.
+ * @return Four-byte-aligned payload byte count.
+ */
 i32 align_up(i32 size) { return (size + 3) & ~3; }
+
+/**
+ * Reads one allocator metadata word from process memory.
+ * @param address Aligned process-local metadata address.
+ * @return Stored i32 word.
+ */
 i32 read_word(i32 address) {
     i32 *pointer = (i32*)address;
     return *pointer;
 }
+/**
+ * Writes one allocator metadata word to process memory.
+ * @param address Aligned process-local metadata address.
+ * @param value Word to store.
+ */
 void write_word(i32 address, i32 value) {
     i32 *pointer = (i32*)address;
     *pointer = value;
 }
 
+/**
+ * @param block Free-block header address.
+ * @return Payload size recorded in the header.
+ */
 i32 block_size(i32 block) { return read_word(block); }
+
+/**
+ * @param block Free-block header address.
+ * @return Next free-block header address, or zero at the list tail.
+ */
 i32 block_next(i32 block) { return read_word(block + 4); }
+
+/**
+ * Updates the payload size in a free-block header.
+ * @param block Free-block header address.
+ * @param size Aligned payload byte count.
+ */
 void set_block_size(i32 block, i32 size) { write_word(block, size); }
+
+/**
+ * Updates the next pointer in a free-block header.
+ * @param block Free-block header address.
+ * @param next Following free-block header, or zero.
+ */
 void set_block_next(i32 block, i32 next) { write_word(block + 4, next); }
+
+/**
+ * @param block Allocator block header address.
+ * @return First address after the block's header and payload.
+ */
 i32 block_end(i32 block) { return block + HEADER_SIZE + block_size(block); }
 
 /**
  * Allocates bytes in the current application process.
+ * @param requested Positive payload byte count.
  * @return `Ok(pointer)` on success, or `Err(InvalidSize|OutOfMemory)`.
  */
 export Result<i32, AllocationError> alloc(i32 requested) {
@@ -36,6 +83,8 @@ export Result<i32, AllocationError> alloc(i32 requested) {
     if (size <= 0 || size > 0x7ffffffF - HEADER_SIZE) {
         return Err(AllocationError::InvalidSize);
     }
+    g_heap_lock.lock();
+    defer g_heap_lock.unlock();
     i32 previous = 0;
     i32 block = g_free_head;
     while (block != 0) {
@@ -49,16 +98,22 @@ export Result<i32, AllocationError> alloc(i32 requested) {
         block = next;
     }
 
-    i32 fresh = sys_sbrk(size + HEADER_SIZE);
-    if (fresh <= 0) { return Err(AllocationError::OutOfMemory); }
+    i32 fresh = 0;
+    SyscallStatus status = sys_sbrk(size + HEADER_SIZE, &fresh);
+    if (status != SyscallStatus::Ok || fresh <= 0) { return Err(AllocationError::OutOfMemory); }
     set_block_size(fresh, size);
     set_block_next(fresh, 0);
     return Ok(fresh + HEADER_SIZE);
 }
 
-/** Returns an application allocation to the address-ordered free list. */
+/**
+ * Returns an application allocation to the address-ordered free list and coalesces neighbours.
+ * @param pointer Payload pointer previously returned by alloc; zero is ignored.
+ */
 export void free(i32 pointer) {
     if (pointer == 0) { return; }
+    g_heap_lock.lock();
+    defer g_heap_lock.unlock();
     i32 block = pointer - HEADER_SIZE;
     i32 previous = 0;
     i32 current = g_free_head;

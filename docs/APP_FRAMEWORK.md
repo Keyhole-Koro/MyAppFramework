@@ -69,7 +69,7 @@ void (Counter *c) click(i32 id) {
   ヘッダから `@app` 行を読む。Framework は特定のアプリを知らず、MyOS image にアプリの
   コードをリンクもしない。MyOS リポジトリの `src/apps/` は配布する source package の置き場で、
   MyOS 実装層ではない。
-- **レシーバはポインタか参照** (`Counter *c` / `ref mut Counter c`)。framework はインスタンスの
+- **レシーバはポインタか参照** (`Counter *c` / `borrow mut Counter c`)。framework はインスタンスの
   アドレスを第一引数に渡すので、値レシーバ（move）は使えない（コンパイルエラー）。
 - **`ref={c->label}`** はそのノードの id をフィールドに書く。木を歩いて id を
   取り直すコードは要らない。

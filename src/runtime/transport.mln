@@ -6,9 +6,25 @@ package app_transport;
 // the process. Everything the message names by pointer is copied by the
 // OS at the boundary.
 
-import { os_call, sys_wait_notification, sys_exit } from "@std/platform/myos/syscall.masm";
+import { sys_wait_notification, sys_exit } from "@std/platform/myos/syscall.masm";
+import myos_service from "@std/platform/myos/service.mln";
 import { OsService } from "@contracts/myos/services.contract.mln";
 import { Request, Event, TransportSignal } from "@contracts/myapp/message.contract.mln";
+import { Result } from "@std/core/result.mln";
+
+/** Returns a known service's scalar value, or zero if its transport fails. */
+i32 service_value(i32 service_number, i32 args) {
+    return case myos_service.call(service_number, args) of {
+        Ok(value) -> value;
+        Err(_) -> 0;
+    };
+}
+
+/** Blocks for an armed transport signal and discards the delivered bit mask. */
+void wait_for(i32 mask) {
+    i32 notification = 0;
+    sys_wait_notification(mask, &notification);
+}
 
 // The syscall reply is an ABI word. runtime.send() converts it to the public
 // RequestStatus enum at this boundary.
@@ -16,24 +32,24 @@ export i32 request(Request *m) {
     // The shared request ring can be briefly full while several applications
     // are mounting. A rejected enqueue has no reply, so retry it instead of
     // entering the reply wait with no request in flight.
-    while (os_call(OsService::REQUEST, (i32)m) == 0) {
-        sys_wait_notification(TransportSignal::REQUEST_SPACE);
+    while (service_value(OsService::REQUEST, (i32)m) == 0) {
+        wait_for(TransportSignal::REQUEST_SPACE);
     }
     i32 r[2];
     r[0] = 0;
-    while (os_call(OsService::REPLY, (i32)(&r[0])) == 0) {
-        sys_wait_notification(TransportSignal::REPLY);
+    while (service_value(OsService::REPLY, (i32)(&r[0])) == 0) {
+        wait_for(TransportSignal::REPLY);
     }
     return r[0];
 }
 
 export bool poll(Event *out) {
-    if (os_call(OsService::POLL, (i32)out) == 0) { return false; }
+    if (service_value(OsService::POLL, (i32)out) == 0) { return false; }
     return true;
 }
 
 export void idle() {
-    sys_wait_notification(TransportSignal::EVENT);
+    wait_for(TransportSignal::EVENT);
 }
 
 export void exit() {
