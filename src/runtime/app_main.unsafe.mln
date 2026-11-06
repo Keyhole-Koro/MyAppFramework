@@ -23,8 +23,7 @@ export i32 main() {
     app_allocator.init();
     Annotations rows = annotations.named("app");
     if (!rows.next()) { return 1; }
-    Result<i32, AnnotationError> size_result = rows.size();
-    i32 size = case size_result of {
+    i32 size = case rows.size() of {
         Ok(value) -> value;
         Err(_) -> ({ return 1; });
     };
@@ -35,8 +34,7 @@ export i32 main() {
     char *p = (char*)self;
     i32 i = 0;
     while (i < size) { p[i] = (char)0; i++; }
-    Result<char*, AnnotationError> type_result = rows.type();
-    char *type = case type_result of {
+    char *type = case rows.type() of {
         Ok(value) -> value;
         Err(_) -> ({ return 1; });
     };
