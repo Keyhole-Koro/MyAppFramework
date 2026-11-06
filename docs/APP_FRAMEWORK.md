@@ -41,11 +41,11 @@ import { app } from "../../../MyAppFramework/src/annotations.mln";      // 使�
 struct Counter {
     i32 clicks;          // インスタンスの状態。mount 時にゼロ埋めされる
     i32 step;
-    i32 label;           // ref= で受け取るノード id
+    NodeId label;        // ref= で受け取るノード id
 };
 
 @app                                                     // view に付ける = この型はアプリ
-i32 (borrow Counter c) view() {
+NodeId (borrow Counter c) view() {
     c.step = 1;                                         // 0 以外の初期値はここで
     return <Window title="Counter" x={96} y={72} w={400} h={272}>
         <Label ref={c.label} text="clicks: 0" bold={1} testId="counter" />
@@ -53,7 +53,7 @@ i32 (borrow Counter c) view() {
     </Window>;
 }
 
-void (borrow Counter c) click(i32 id) {
+void (borrow Counter c) click(NodeId id) {
     c.clicks = c.clicks + c.step;
     ui.set_text_fmt(c.label, "clicks: %d", "", c.clicks);
 }
@@ -80,7 +80,7 @@ void (borrow Counter c) click(i32 id) {
   `gap`、`padding`、`onClick` 等は `elements.mln` のデフォルトが入る。
   `testId="..."` は automation 用の名前。
 - **ハンドラはメソッドを直接渡す** (`onClick={c.click}`)。引数は
-  `()`, `(i32 id)`, `(i32 id, i32 arg)` のどれでもよい。関数ポインタはアプリの外へ出ない：
+  `()`, `(NodeId id)`, `(NodeId id, i32 arg)` のどれでもよい。関数ポインタはアプリの外へ出ない：
   `runtime.mln` の表に (ノード id, 種別) → メソッドとして残り、サーバからの CLICK / CHANGE
   イベントで呼ばれる。
 
@@ -90,9 +90,9 @@ void (borrow Counter c) click(i32 id) {
 | --- | --- | --- |
 | `@app` / `@app(single)` / `@app(name = "...")` | この view を持つ型をアプリに。`single` は 2 回目の起動で既存ウィンドウを前面に | `i32 (T *self) view()` |
 | `@open` | 他アプリの `ui.open(path)` を受ける。`single` なら既存インスタンスへ | `(borrow Text<64> path)` |
-| `@on_close` | ユーザーがウィンドウを閉じた。後始末のあと runtime が EXIT を送り、MyOS が所有物を回収する | `()` / `(i32 id)` |
-| `@timer(ms)` | mount 中、周期的に呼ばれる。インスタンスごとに 1 本 | `()` / `(i32 id)` |
-| `@key("Ctrl+S")` | そのウィンドウがアクティブな間のショートカット | `()` / `(i32 id)` / `(id, arg)` |
+| `@on_close` | ユーザーがウィンドウを閉じた。後始末のあと runtime が EXIT を送り、MyOS が所有物を回収する | `()` / `(NodeId id)` |
+| `@timer(ms)` | mount 中、周期的に呼ばれる。インスタンスごとに 1 本 | `()` / `(NodeId id)` |
+| `@key("Ctrl+S")` | そのウィンドウがアクティブな間のショートカット | `()` / `(NodeId id)` / `(id, arg)` |
 
 `src/apps/editor.dom.mln`（`single` + `@open` + `@key`）、`terminal.dom.mln`
 （`@timer` + `@key("Enter")` + `@on_close`）、`files.dom.mln`（ダイアログ）が実例。
@@ -144,10 +144,10 @@ MyStdLib は名前による filter と row access を提供するだけで、上
 framework が独自 annotation を同じ表に混ぜても、各読み手は要求した名前だけを見る。仕様は
 `docs/design/toolchain-collected-sections.md`。
 
-- **ハンドラ ABI は 1 種類**: `void handler(i32 owner, i32 id, i32 arg)`。
+- **ハンドラ ABI は 1 種類**: `void handler(i32 owner, NodeId id, i32 arg)`。
   `owner` はインスタンスのポインタ。呼び出し規約が余分な引数を無視するので、
   `onClick={c.click}` も `@timer` のメソッドも**メソッドの実体**をそのまま登録する
-  （`(Counter *c, i32 id)` に `owner` と `id` が届く）。トランポリンは無い。
+  （`(Counter *c, NodeId id)` に `owner` と `id` が届く）。トランポリンは無い。
 - **イベント** (`docs/design/ui-protocol.md`): 所有ノードへのクリック・変更・タイマは
   UI domainのevent sinkからservice層を通って`Event`としてプロセスのチャネルに積まれ、
   アプリ側の `runtime.run()` が `poll` で取って表を引きメソッドを呼ぶ。要求は `OS_CALL`
@@ -190,6 +190,8 @@ python3 system/MyOS/tests/apps_e2e_test.py        # プロセス / エディタ 
   コピーされない。文レベルの 2 段 case で読む（`files.dom.mln` の `refresh`）。
 - `@task` は無くした（`scheduler.spawn_task` がタスク引数を取れるようになったら関数を 1 つ足すだけ）。
 - struct のフィールド初期化子 (`i32 step = 1;`) は効かない（生成コードが無い）。view() で入れる。
+- `Option` のフィールドも view() で `None` を入れる。インスタンスはゼロ埋めで、ゼロのバイトは
+  `Some(0)` と読める。
 - グローバルの**ポインタ配列**への実行時代入 (`char *g[16]; g[0] = "x";`) は誤コンパイル
   される（要素ストライドの既知バグ）。シェルの `app.mln` は `i32` 配列 + キャストで持っている。
   静的初期化 (`char *g[] = {"a", "b"};`) は `.word` で正しく出る。

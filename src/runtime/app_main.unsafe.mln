@@ -23,8 +23,7 @@ export i32 main() {
     app_allocator.init();
     Annotations rows = annotations.named("app");
     if (!rows.next()) { return 1; }
-    Result<i32, AnnotationError> size_result = rows.size();
-    i32 size = case size_result of {
+    i32 size = case rows.size() of {
         Ok(value) -> value;
         Err(_) -> ({ return 1; });
     };

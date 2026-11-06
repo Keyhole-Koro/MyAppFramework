@@ -7,10 +7,10 @@ import { CodeAddress } from "@std/core/address.mln";
 //     import { app, timer, key } from ".../annotations.mln";
 //
 //     @app(single, name = "Editor")
-//     i32 (Editor *e) view() { return <Window ...>...</Window>; }
+//     NodeId (Editor *e) view() { return <Window ...>...</Window>; }
 //
 //     @key("Ctrl+S")
-//     void (Editor *e) save(i32 id) { ... }
+//     void (Editor *e) save(NodeId id) { ... }
 //
 // Like a Java @interface, each prototype fixes a name and the shape of its
 // arguments; nothing ever calls it. The compiler checks every `@name(args)`

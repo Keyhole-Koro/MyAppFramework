@@ -16,7 +16,7 @@ package runtime;
 //   the app's event loop, on its own task.
 //
 // Handlers are called as fn(self, id, arg) with self = the instance, so
-// a method `void (borrow T self) tick()` or `(borrow T self) save(i32 id)` is
+// a method `void (borrow T self) tick()` or `(borrow T self) save(NodeId id)` is
 // passed as is (the calling convention ignores trailing arguments).
 
 import app_transport from "transport.mln";
@@ -26,7 +26,7 @@ import { AppOp, AppError, KeyClaimError } from "@contracts/myapp/lifecycle.contr
 import hosted_log from "@std/hosted/log.mln";
 import annotations from "@std/meta/annotations.mln";
 import { Annotations, AnnotationError } from "@std/meta/annotations.mln";
-import { UiError } from "@contracts/ui/widget.contract.mln";
+import { NodeId, UiError } from "@contracts/ui/widget.contract.mln";
 import { Result } from "@std/core/result.mln";
 import { Option } from "@std/core/option.mln";
 import { CodeAddress } from "@std/core/address.mln";
@@ -88,14 +88,14 @@ struct Handler {
     i32 owner;
     i32 key;           // node id, KEY claim token, or 0 for OPEN / CLOSE
     EventKind kind;
-    fn(i32 owner, i32 id, i32 arg) -> void callback;
+    fn(i32 owner, NodeId id, i32 arg) -> void callback;
 };
 Handler handlers[256];
 i32 handler_count = 0;
 
 // Register fn for (key, kind) on the current instance.
 @safe
-export void on(i32 key, EventKind kind, fn(i32 owner, i32 id, i32 arg) -> void callback) {
+export void on(i32 key, EventKind kind, fn(i32 owner, NodeId id, i32 arg) -> void callback) {
     if (callback == 0) { return; }
     i32 i = 0;
     while (i < handler_count) {
@@ -112,7 +112,7 @@ export void on(i32 key, EventKind kind, fn(i32 owner, i32 id, i32 arg) -> void c
     handlers[i].callback = callback;
 }
 
-fn(i32 owner, i32 id, i32 arg) -> void lookup(i32 owner, i32 key, EventKind kind) {
+fn(i32 owner, NodeId id, i32 arg) -> void lookup(i32 owner, i32 key, EventKind kind) {
     i32 i = 0;
     while (i < handler_count) {
         if (handlers[i].callback != 0 && handlers[i].owner == owner && handlers[i].key == key && handlers[i].kind == kind) {
@@ -189,6 +189,12 @@ export void ask_i32(borrow Request request, borrow Result<i32, UiError> result) 
     ask(request, (i32)result, sizeof(Result<i32, UiError>));
 }
 
+/** Sends a request and receives its Result<NodeId, UiError> answer. */
+@safe
+export void ask_node(borrow Request request, borrow Result<NodeId, UiError> result) {
+    ask(request, (i32)result, sizeof(Result<NodeId, UiError>));
+}
+
 /** Sends a request and receives its Result<bool, UiError> answer. */
 @safe
 export void ask_bool(borrow Request request, borrow Result<bool, UiError> result) {
@@ -201,10 +207,16 @@ export void ask_option(borrow Request request, borrow Result<Option<i32>, UiErro
     ask(request, (i32)result, sizeof(Result<Option<i32>, UiError>));
 }
 
-/** Sends a request and receives its Result<Option<i32>, AppError> answer. */
+/** Sends a request and receives its Result<Option<NodeId>, UiError> answer. */
 @safe
-export void ask_app_option(borrow Request request, borrow Result<Option<i32>, AppError> result) {
-    ask(request, (i32)result, sizeof(Result<Option<i32>, AppError>));
+export void ask_node_option(borrow Request request, borrow Result<Option<NodeId>, UiError> result) {
+    ask(request, (i32)result, sizeof(Result<Option<NodeId>, UiError>));
+}
+
+/** Sends a request and receives its Result<Option<NodeId>, AppError> answer. */
+@safe
+export void ask_app_option(borrow Request request, borrow Result<Option<NodeId>, AppError> result) {
+    ask(request, (i32)result, sizeof(Result<Option<NodeId>, AppError>));
 }
 
 /** Sends a request and receives its Result<i32, KeyClaimError> answer. */
@@ -215,16 +227,8 @@ export void ask_key(borrow Request request, borrow Result<i32, KeyClaimError> re
 
 /** Sends a request and receives its Result<_, UiError> answer. */
 @safe
-export void ask_unit(borrow Request request, borrow Result<_, UiError> result) {
-    ask(request, (i32)result, sizeof(Result<_, UiError>));
-}
-
 /** Sends a request and receives its Result<_, AppError> answer. */
 @safe
-export void ask_app_unit(borrow Request request, borrow Result<_, AppError> result) {
-    ask(request, (i32)result, sizeof(Result<_, AppError>));
-}
-
 void send_app_value(i32 op, i32 a0, str s0) {
     Request request = app_request(op);
     request.a0 = a0;
@@ -239,24 +243,23 @@ void send_app_value(i32 op, i32 a0, str s0) {
 // shortcuts and remember its @open / @on_close methods. The annotation
 // rows are read here, in the app, so the OS needs to know nothing about
 // those annotations but @app itself.
-export i32 start(i32 self, str type) {
+export void start(i32 self, str type) {
     current_owner = self;   // for the rest of the process's life
-    i32 win = 0;
     Annotations app = annotations.where("app", type);
     if (app.next()) {
-        fn(i32 self) -> i32 view = (fn(i32 self) -> i32)annotation_code(app.fn());
-        win = view(self);
-        if (win != 0) { send_app_value(AppOp::MAIN_WINDOW, win, ""); }
+        fn(i32 self) -> NodeId view = (fn(i32 self) -> NodeId)annotation_code(app.fn());
+        NodeId win = view(self);
+        send_app_value(AppOp::MAIN_WINDOW, (i32)win, "");
     }
     Annotations timers = annotations.where("timer", type);
     while (timers.next()) {
-        Result<i32, UiError> created = Err(UiError::TimerLimit);
+        Result<NodeId, UiError> created = Err(UiError::TimerLimit);
         Request request = ui_request(UiOp::CREATE_TIMER);
         request.a0 = annotation_i32(timers.arg(0));
-        ask_i32(&request, &created);
-        i32 id = case created of { Ok(value) -> value; Err(e) -> ({ fail_ui(e); 0; }); };
-        on(id, EventKind::TIMER,
-           (fn(i32 owner, i32 id, i32 arg) -> void)annotation_code(timers.fn()));
+        ask_node(&request, &created);
+        NodeId id = case created of { Ok(value) -> value; Err(e) -> ({ fail_ui(e); (NodeId)0; }); };
+        on((i32)id, EventKind::TIMER,
+           (fn(i32 owner, NodeId id, i32 arg) -> void)annotation_code(timers.fn()));
     }
     Annotations keys = annotations.where("key", type);
     while (keys.next()) {
@@ -266,21 +269,20 @@ export i32 start(i32 self, str type) {
         ask_key(&request, &claimed);
         case claimed of {
             Ok(token) -> on(token, EventKind::KEY,
-                            (fn(i32 owner, i32 id, i32 arg) -> void)annotation_code(keys.fn()));
+                            (fn(i32 owner, NodeId id, i32 arg) -> void)annotation_code(keys.fn()));
             Err(_) -> log("Could not register app keyboard shortcut");
         };
     }
     Annotations opens = annotations.where("open", type);
     if (opens.next()) {
         on(0, EventKind::OPEN,
-           (fn(i32 owner, i32 id, i32 arg) -> void)annotation_code(opens.fn()));
+           (fn(i32 owner, NodeId id, i32 arg) -> void)annotation_code(opens.fn()));
     }
     Annotations closes = annotations.where("on_close", type);
     if (closes.next()) {
         on(0, EventKind::CLOSE,
-           (fn(i32 owner, i32 id, i32 arg) -> void)annotation_code(closes.fn()));
+           (fn(i32 owner, NodeId id, i32 arg) -> void)annotation_code(closes.fn()));
     }
-    return win;
 }
 
 void deliver(Event *ev) {
@@ -289,16 +291,17 @@ void deliver(Event *ev) {
     if (ev->kind == EventKind::OPEN) { key = 0; }
     if (ev->kind == EventKind::CLOSE) { key = 0; }
     i32 self = current_owner;
-    fn(i32 owner, i32 id, i32 arg) -> void handler = lookup(self, key, ev->kind);
+    fn(i32 owner, NodeId id, i32 arg) -> void handler = lookup(self, key, ev->kind);
     if (handler != 0) {
         if (ev->kind == EventKind::OPEN) {
             // A handler's receiver and argument are lent for the call, so the
-            // path is a `borrow Text<64>` to the app.
+            // path is a `borrow Text<64>` to the app: its address takes the
+            // place of the node.
             g_open_path.clear();
             g_open_path.append(str.from_c(&ev->text[0]));
-            handler(self, (i32)(&g_open_path), 0);
+            handler(self, NodeId((i32)(&g_open_path)), 0);
         } else {
-            handler(self, ev->id, ev->arg);
+            handler(self, NodeId(ev->id), ev->arg);
         }
     }
     if (ev->kind == EventKind::CLOSE) {
