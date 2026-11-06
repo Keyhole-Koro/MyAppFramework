@@ -35,7 +35,8 @@ import { CodeAddress } from "@std/core/address.mln";
 // the window and routes the window's events to the instance.
 // `single`: launching it again focuses the running instance instead.
 // `name`: the launcher label (default: the type's name).
-export void app(CodeAddress view, char *type, i32 size, bool single = false, char *name = "");
+// `opens`: it takes the paths other apps hand to ui.open(), in App's `open`.
+export void app(CodeAddress view, char *type, i32 size, bool single = false, char *name = "", bool opens = false);
 
 // fn(self) every `ms` milliseconds while an instance is mounted.
 export void timer(CodeAddress fn, char *type, i32 size, i32 ms);
