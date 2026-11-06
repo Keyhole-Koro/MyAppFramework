@@ -112,26 +112,12 @@ export Result<i32, UiError> area_lines(NodeId id) {
     return result;
 }
 
-export void list_set_items(NodeId id, str items) {
-    Request request = runtime.ui_request(UiOp::LIST_SET_ITEMS);
-    request.a0 = (i32)id; runtime.put_s0(&request, items);
-    runtime.send(&request);
-}
 /** Returns List item count, or an error for an invalid/non-List node. */
 export Result<i32, UiError> list_count(NodeId id) {
     Result<i32, UiError> result = Err(UiError::NodeNotFound(id));
     Request request = runtime.ui_request(UiOp::LIST_COUNT);
     request.a0 = (i32)id;
     runtime.ask_i32(&request, &result);
-    return result;
-}
-
-// A missing selection is Ok(None); an invalid node is Err(UiError).
-export Result<Option<i32>, UiError> list_selected(NodeId id) {
-    Result<Option<i32>, UiError> result = Err(UiError::NodeNotFound(id));
-    Request request = runtime.ui_request(UiOp::LIST_SELECTED);
-    request.a0 = (i32)id;
-    runtime.ask_option(&request, &result);
     return result;
 }
 
@@ -169,45 +155,6 @@ export void focus(NodeId id) {
 }
 export void focus_window(NodeId win) {
     Request request = runtime.ui_request(UiOp::FOCUS_WINDOW);
-    request.a0 = (i32)win;
-    runtime.send(&request);
-}
-
-// Close a window the app opened itself (a dialog). The app's own main
-// window is closed by the framework when the user closes it.
-export void close(NodeId win) {
-    Request request = runtime.ui_request(UiOp::CLOSE);
-    request.a0 = (i32)win;
-    runtime.send(&request);
-}
-
-export Result<Option<NodeId>, UiError> window_of(NodeId id) {
-    Result<Option<NodeId>, UiError> result = Err(UiError::NodeNotFound(id));
-    Request request = runtime.ui_request(UiOp::WINDOW_OF);
-    request.a0 = (i32)id;
-    runtime.ask_node_option(&request, &result);
-    return result;
-}
-
-export Result<i32, UiError> window_x(NodeId win) {
-    Result<i32, UiError> result = Err(UiError::NodeNotFound(win));
-    Request request = runtime.ui_request(UiOp::WINDOW_X);
-    request.a0 = (i32)win;
-    runtime.ask_i32(&request, &result);
-    return result;
-}
-
-export Result<i32, UiError> window_y(NodeId win) {
-    Result<i32, UiError> result = Err(UiError::NodeNotFound(win));
-    Request request = runtime.ui_request(UiOp::WINDOW_Y);
-    request.a0 = (i32)win;
-    runtime.ask_i32(&request, &result);
-    return result;
-}
-
-// Mount a tree the app built (a dialog) on the desktop and focus it.
-export void show(NodeId win) {
-    Request request = runtime.ui_request(UiOp::SHOW);
     request.a0 = (i32)win;
     runtime.send(&request);
 }
