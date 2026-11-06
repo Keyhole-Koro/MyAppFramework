@@ -14,6 +14,7 @@ import { NodeId, UiError } from "@contracts/ui/widget.contract.mln";
 import { OsService } from "@contracts/myos/services.contract.mln";
 import { ProcBindArgs } from "@contracts/myos/process-args.contract.mln";
 import { SyscallFailure } from "@contracts/myos/syscall.contract.mln";
+import { Pid } from "@contracts/process/control.contract.mln";
 import { AllocationError } from "@std/memory/allocator.mln";
 import { Result } from "@std/core/result.mln";
 
@@ -146,7 +147,7 @@ void colours_are_packed_rgb() {
 /*@Test "a terminal binds a process to one of its nodes" { step: 1000000; }*/
 void a_terminal_binds_a_process_to_one_of_its_nodes() {
     mock.of(myos_service.call).when(mock.any(), mock.any()).call(recording_service);
-    terminal.bind(12, NodeId(34));
+    terminal.bind(Pid(12), NodeId(34));
     assert.assert_true(g_service == OsService::PROC_BIND, "bind names the service");
     assert.assert_true(g_bound_pid == 12 && g_bound_node == 34, "bind carries the pid and the node");
 }
