@@ -1,0 +1,116 @@
+import assert from "@std/testing/assert.mln";
+import mock from "../../../toolchain/MyLangTestKit/runtime/facade.mln";
+import ui from "@app/ui.mln";
+import elements from "@app/elements.mln";
+import app_transport from "@app/runtime/transport.mln";
+import terminal from "@app/terminal.mln";
+import myos_service from "@std/platform/myos/service.mln";
+import { UiOp } from "@contracts/myapp/ui.contract.mln";
+import { Request } from "@contracts/myapp/message.contract.mln";
+import { NodeId, UiError } from "@contracts/ui/widget.contract.mln";
+import { OsService } from "@contracts/myos/services.contract.mln";
+import { ProcBindArgs } from "@contracts/myos/process-args.contract.mln";
+import { SyscallFailure } from "@contracts/myos/syscall.contract.mln";
+import { Result } from "@std/core/result.mln";
+
+// What the SDK's calls put on the wire. The transport is faked, so every call
+// here ends in recording_request, and no OS is needed.
+
+i32 g_requests = 0;
+Request g_last;
+
+i32 recording_request(borrow Request request) {
+    g_requests = g_requests + 1;
+    g_last = *request;
+    return 0;
+}
+
+// Markup goes through adapters that stop the app on an error, so it needs an
+// answer as well.
+i32 answering_request(borrow Request request) {
+    Result<NodeId, UiError> *answer = (Result<NodeId, UiError> *)request.result_out;
+    *answer = Ok(NodeId(g_requests + 1));
+    return recording_request(request);
+}
+
+i32 g_service = 0;
+i32 g_bound_pid = 0;
+i32 g_bound_node = 0;
+
+Result<i32, SyscallFailure> recording_service(i32 service, i32 args) {
+    ProcBindArgs *bound = (ProcBindArgs *)args;
+    g_service = service;
+    g_bound_pid = bound->pid;
+    g_bound_node = bound->output_node;
+    return Ok(0);
+}
+
+void no_tick(i32 owner, NodeId id, i32 arg) { }
+
+void expect_request(i32 count, i32 op, i32 a0, str what) {
+    assert.assert_true(g_requests == count, what);
+    assert.assert_true(g_last.op == op, what);
+    assert.assert_true(g_last.a0 == a0, what);
+}
+
+/*@Test "widget calls name their operation and node" { step: 5000000; }*/
+void widget_calls_name_their_operation_and_node() {
+    mock.of(app_transport.request).when(mock.any()).call(recording_request);
+    ui.set_checked(NodeId(5), 1);
+    expect_request(1, UiOp::SET_CHECKED, 5, "set_checked");
+    assert.assert_true(g_last.a1 == 1, "set_checked carries the state");
+    ui.area_lines(NodeId(6));
+    expect_request(2, UiOp::AREA_LINES, 6, "area_lines");
+    assert.assert_true(g_last.result_out != 0, "area_lines asks for an answer");
+    ui.list_count(NodeId(7));
+    expect_request(3, UiOp::LIST_COUNT, 7, "list_count");
+    ui.focus_window(NodeId(8));
+    expect_request(4, UiOp::FOCUS_WINDOW, 8, "focus_window");
+    ui.test_id(NodeId(9), "name");
+    expect_request(5, UiOp::TEST_ID, 9, "test_id");
+    assert.assert_true(g_last.s0_len == 4, "test_id carries the name");
+}
+
+/*@Test "elements are one create request" { step: 5000000; }*/
+void elements_are_one_create_request() {
+    mock.of(app_transport.request).when(mock.any()).call(recording_request);
+    g_requests = 0;
+    elements.Text("hello", 3, 4, "id");
+    expect_request(1, UiOp::CREATE_TEXT, 3, "Text");
+    assert.assert_true(g_last.s0_len == 5 && g_last.s1_len == 2, "Text carries both strings");
+    elements.Box(1, 2, 3, 4, ui.ACCENT, ui.TEXT_DISABLED);
+    expect_request(2, UiOp::CREATE_BOX, 1, "Box");
+    assert.assert_true(g_last.a4 == ui.ACCENT && g_last.a5 == ui.TEXT_DISABLED, "Box carries its colours");
+    elements.Timer(30, no_tick);
+    expect_request(3, UiOp::CREATE_TIMER, 30, "Timer");
+}
+
+NodeId text_markup() { return <Text text="hi" x={1} y={2} />; }
+NodeId box_markup() { return <Box x={3} y={4} w={5} h={6} background={7} border={8} />; }
+NodeId timer_markup() { return <Timer interval={9} onTick={no_tick} />; }
+
+/*@Test "markup builds through the element adapters" { step: 5000000; }*/
+void markup_builds_through_the_element_adapters() {
+    mock.of(app_transport.request).when(mock.any()).call(answering_request);
+    g_requests = 0;
+    NodeId text = text_markup();
+    expect_request(1, UiOp::CREATE_TEXT, 1, "<Text>");
+    assert.assert_true((i32)text == 1, "<Text> yields the answered node");
+    box_markup();
+    expect_request(2, UiOp::CREATE_BOX, 3, "<Box>");
+    timer_markup();
+    expect_request(3, UiOp::CREATE_TIMER, 9, "<Timer>");
+}
+
+/*@Test "colours are packed RGB" { step: 100000; }*/
+void colours_are_packed_rgb() {
+    assert.assert_true(ui.rgb(0x1F, 0x23, 0x28) == ui.TEXT_PRIMARY, "rgb packs red, green, blue");
+}
+
+/*@Test "a terminal binds a process to one of its nodes" { step: 1000000; }*/
+void a_terminal_binds_a_process_to_one_of_its_nodes() {
+    mock.of(myos_service.call).when(mock.any(), mock.any()).call(recording_service);
+    terminal.bind(12, NodeId(34));
+    assert.assert_true(g_service == OsService::PROC_BIND, "bind names the service");
+    assert.assert_true(g_bound_pid == 12 && g_bound_node == 34, "bind carries the pid and the node");
+}

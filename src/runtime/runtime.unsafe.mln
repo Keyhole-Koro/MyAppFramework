@@ -61,9 +61,6 @@ str annotation_text(Result<str, AnnotationError> value) {
     };
 }
 
-@safe
-export i32 owner() { return current_owner; }
-
 // A line on the OS's debug console, for an app's own diagnostics.
 @safe
 export void log(str line) {
