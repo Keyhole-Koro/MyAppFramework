@@ -21,7 +21,7 @@ Request g_last;
 
 i32 recording_request(borrow Request request) {
     g_requests = g_requests + 1;
-    g_last = *request;
+    g_last = request;
     return 0;
 }
 
@@ -30,7 +30,7 @@ i32 recording_request(borrow Request request) {
 i32 answering_request(borrow Request request) {
     Result<NodeId, UiError> *answer = (Result<NodeId, UiError> *)request.result_out;
     *answer = Ok(NodeId(g_requests + 1));
-    return recording_request(request);
+    return recording_request(&request);
 }
 
 i32 g_service = 0;

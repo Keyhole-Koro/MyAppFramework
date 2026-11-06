@@ -32,7 +32,7 @@ export i32 request(borrow Request m) {
     // The shared request ring can be briefly full while several applications
     // are mounting. A rejected enqueue has no reply, so retry it instead of
     // entering the reply wait with no request in flight.
-    while (service_value(OsService::REQUEST, (i32)m) == 0) {
+    while (service_value(OsService::REQUEST, (i32)&m) == 0) {
         wait_for(TransportSignal::REQUEST_SPACE);
     }
     i32 r[2];
