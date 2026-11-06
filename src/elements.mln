@@ -348,35 +348,82 @@ export Result<NodeId, UiError> TextArea(str name, TextField field = 0, TextLog l
 }
 
 /**
- * Lowers JSX `<List name="..." x={...} y={...} w={...} h={...} capacity={...} onChange={...} onActivate={...} testId="..." />`.
- * onChange fires when the selection moves, onActivate (stored as the click
- * handler) when a row is clicked again or Enter is pressed.
+ * Lowers JSX `<List name="..." items={...} selected={...} x={...} y={...} w={...} h={...} capacity={...} focus={...} onChange={...} onActivate={...} testId="..." />`.
+ * onChange fires when the user selects a row, onActivate when a row is clicked
+ * again or Enter is pressed.
  * @param name Node name identifier.
+ * @param items The rows, joined by newlines (default none).
+ * @param selected The selected row (default none).
  * @param x Logical X coordinate (default 0).
  * @param y Logical Y coordinate (default 0).
  * @param w Logical width (default 300).
  * @param h Logical height (default 200).
  * @param capacity Buffer capacity in bytes (default 1024).
- * @param onChange Selection change callback function pointer (default none).
- * @param onActivate Row activation callback function pointer (default none).
+ * @param focus Whether the keyboard starts here (default false).
+ * @param onChange Called with the row the user selected (default none).
+ * @param onActivate Called with the row the user activated (default none).
  * @param testId Stable automation locator id (default none).
  * @return DOM Node ID.
  */
-export Result<NodeId, UiError> List(str name, i32 x = 0, i32 y = 0, i32 w = 300, i32 h = 200, i32 capacity = 1024, fn(i32 owner, NodeId id, i32 arg) -> void onChange = 0, fn(i32 owner, NodeId id, i32 arg) -> void onActivate = 0, str testId = "") {
+export Result<NodeId, UiError> List(str name, str items = "", Option<i32> selected = None, i32 x = 0, i32 y = 0, i32 w = 300, i32 h = 200, i32 capacity = 1024, bool focus = false, fn(i32 owner, i32 row) -> void onChange = 0, fn(i32 owner, i32 row) -> void onActivate = 0, str testId = "") {
     Request request = runtime.ui_request(UiOp::CREATE_LIST);
     request.a0 = x; request.a1 = y; request.a2 = w; request.a3 = h; request.a4 = capacity;
     runtime.put_s0(&request, name); runtime.put_s1(&request, testId);
     Result<NodeId, UiError> result = create(request);
-    register_handler(result, EventKind::CHANGE, onChange);
-    register_handler(result, EventKind::ACTIVATE, onActivate);
+    case result of {
+        Ok(id) -> ({
+            runtime.on_row((i32)id, EventKind::CHANGE, onChange);
+            runtime.on_row((i32)id, EventKind::ACTIVATE, onActivate);
+            if (!items.is_empty()) { send_items(id, items); }
+            case selected of {
+                Some(row) -> ({ send_selected(id, row); });
+                None -> _;
+            };
+            if (focus) { ui.focus(id); }
+        });
+        Err(_) -> _;
+    };
     return result;
+}
+
+/**
+ * Lowers JSX `<Dialog when={...} title="..." text="..." confirm="..." cancel="..." onConfirm={...} onCancel={...} />`.
+ * A question in a window of its own, up while `when` is true. A handler ends
+ * it by changing that state. Closing its window is cancelling.
+ * @param when Whether the dialog is up.
+ * @param title Window title text.
+ * @param text The question.
+ * @param confirm Label of the button that answers yes (default "OK").
+ * @param cancel Label of the button that answers no (default "Cancel").
+ * @param onConfirm Called when the user answers yes (default none).
+ * @param onCancel Called when the user answers no (default none).
+ * @return DOM Node ID of its window.
+ */
+export Result<NodeId, UiError> Dialog(bool when, str title, str text, str confirm = "OK", str cancel = "Cancel", fn(i32 owner) -> void onConfirm = 0, fn(i32 owner) -> void onCancel = 0) {
+    NodeId window = Window(title, 0, 0, 340, 140, "")?;
+    NodeId label = Label(text, 20, 16, 0, 0, "")?;
+    append_child(window, label)?;
+    NodeId row = Row(20, 60, 300, 34, 0, 10)?;
+    append_child(window, row)?;
+    NodeId yes = PrimaryButton(confirm, 0, 0, 110, 34, 0, "")?;
+    append_child(row, yes)?;
+    NodeId no = Button(cancel, 0, 0, 110, 34, 0, "")?;
+    append_child(row, no)?;
+    runtime.on_event((i32)yes, EventKind::CLICK, onConfirm);
+    runtime.on_event((i32)no, EventKind::CLICK, onCancel);
+    runtime.on_event((i32)window, EventKind::CLOSE, onCancel);
+    runtime.add_dialog(window, label);
+    return Ok(window);
 }
 
 // `.dom.mln` adapters. JSX has an atomic tree-construction policy: it invokes
 // the same typed functions above, but a failed node aborts the application
 // instead of leaving a partial tree. These adapters preserve UiError all the
 // way to that terminal policy; they do not translate it to a sentinel.
-export void dom_append_child(NodeId parent, NodeId child) { unwrap_append(append_child(parent, child)); }
+export void dom_append_child(NodeId parent, NodeId child) {
+    if (runtime.is_dialog(child)) { return; }
+    unwrap_append(append_child(parent, child));
+}
 export NodeId dom_Window(str title, i32 x, i32 y, i32 w, i32 h, str testId) { return unwrap_node(Window(title, x, y, w, h, testId)); }
 export NodeId dom_Button(str text, i32 x, i32 y, i32 w, i32 h, fn(i32 owner, NodeId id, i32 arg) -> void onClick, str testId) { return unwrap_node(Button(text, x, y, w, h, onClick, testId)); }
 export NodeId dom_PrimaryButton(str text, i32 x, i32 y, i32 w, i32 h, fn(i32 owner, NodeId id, i32 arg) -> void onClick, str testId) { return unwrap_node(PrimaryButton(text, x, y, w, h, onClick, testId)); }
@@ -391,7 +438,8 @@ export NodeId dom_Checkbox(str text, i32 x, i32 y, bool checked, fn(i32 owner, b
 export NodeId dom_Separator(i32 x, i32 y, i32 w) { return unwrap_node(Separator(x, y, w)); }
 export NodeId dom_Timer(i32 interval, fn(i32 owner, NodeId id, i32 arg) -> void onTick) { return unwrap_node(Timer(interval, onTick)); }
 export NodeId dom_TextArea(str name, TextField field, TextLog log, str text, i32 x, i32 y, i32 w, i32 h, i32 capacity, i32 readonly, fn(i32 owner, NodeId id, i32 arg) -> void onChange, str testId) { return unwrap_node(TextArea(name, field, log, text, x, y, w, h, capacity, readonly, onChange, testId)); }
-export NodeId dom_List(str name, i32 x, i32 y, i32 w, i32 h, i32 capacity, fn(i32 owner, NodeId id, i32 arg) -> void onChange, fn(i32 owner, NodeId id, i32 arg) -> void onActivate, str testId) { return unwrap_node(List(name, x, y, w, h, capacity, onChange, onActivate, testId)); }
+export NodeId dom_List(str name, str items, Option<i32> selected, i32 x, i32 y, i32 w, i32 h, i32 capacity, bool focus, fn(i32 owner, i32 row) -> void onChange, fn(i32 owner, i32 row) -> void onActivate, str testId) { return unwrap_node(List(name, items, selected, x, y, w, h, capacity, focus, onChange, onActivate, testId)); }
+export NodeId dom_Dialog(bool when, str title, str text, str confirm, str cancel, fn(i32 owner) -> void onConfirm, fn(i32 owner) -> void onCancel) { return unwrap_node(Dialog(when, title, text, confirm, cancel, onConfirm, onCancel)); }
 
 // --- what follows the state ------------------------------------------------------------
 
@@ -410,6 +458,38 @@ void send_text(NodeId id, str value) {
 
 export void Label_text(i32 slot, str value) {
     if (runtime.text_changed(slot, value)) { send_text(runtime.bound(slot), value); }
+}
+
+void send_items(NodeId id, str items) {
+    Request request = runtime.ui_request(UiOp::LIST_SET_ITEMS);
+    request.a0 = (i32)id;
+    runtime.put_s0(&request, items);
+    runtime.send(&request);
+}
+
+void send_selected(NodeId id, i32 row) {
+    Request request = runtime.ui_request(UiOp::LIST_SELECT);
+    request.a0 = (i32)id;
+    request.a1 = row;
+    runtime.send(&request);
+}
+
+export void List_items(i32 slot, str value) {
+    if (runtime.text_changed(slot, value)) { send_items(runtime.bound(slot), value); }
+}
+
+export void List_selected(i32 slot, Option<i32> value) {
+    i32 row = case value of { Some(selected) -> selected; None -> -1; };
+    if (runtime.word_changed(slot, row)) { send_selected(runtime.bound(slot), row); }
+}
+
+// A dialog starts off the desktop whatever `when` says, so its first pass counts.
+export void Dialog_when(i32 slot, bool value) {
+    if (runtime.word_differs(slot, value ? 1 : 0)) { runtime.show_dialog(runtime.bound(slot), value); }
+}
+
+export void Dialog_text(i32 slot, str value) {
+    if (runtime.text_changed(slot, value)) { send_text(runtime.dialog_text(runtime.bound(slot)), value); }
 }
 
 export void Checkbox_checked(i32 slot, bool value) {

@@ -89,6 +89,8 @@ enum HandlerShape {
     WORDS,  // (NodeId id, i32 arg)
     FLAG,   // (bool on)
     TEXT,   // (str text), read from the node
+    ROW,    // (i32 row)
+    NONE,   // ()
 }
 
 struct Handler {
@@ -117,6 +119,18 @@ export void on_flag(i32 key, EventKind kind, fn(i32 owner, bool on) -> void call
 @safe
 export void on_text(i32 key, EventKind kind, fn(i32 owner, str text) -> void callback) {
     add_handler(key, kind, HandlerShape::TEXT, (fn(i32 owner, NodeId id, i32 arg) -> void)callback);
+}
+
+/** Registers a handler of an event that carries a row. */
+@safe
+export void on_row(i32 key, EventKind kind, fn(i32 owner, i32 row) -> void callback) {
+    add_handler(key, kind, HandlerShape::ROW, (fn(i32 owner, NodeId id, i32 arg) -> void)callback);
+}
+
+/** Registers a handler of an event that carries nothing. */
+@safe
+export void on_event(i32 key, EventKind kind, fn(i32 owner) -> void callback) {
+    add_handler(key, kind, HandlerShape::NONE, (fn(i32 owner, NodeId id, i32 arg) -> void)callback);
 }
 
 void add_handler(i32 key, EventKind kind, HandlerShape shape, fn(i32 owner, NodeId id, i32 arg) -> void callback) {
@@ -165,6 +179,16 @@ void call_handler(i32 row, Event *ev) {
     if (handlers[row].shape == HandlerShape::TEXT) {
         fn(i32 owner, str text) -> void changed = (fn(i32 owner, str text) -> void)callback;
         changed(current_owner, read_text(NodeId(ev->id)));
+        return;
+    }
+    if (handlers[row].shape == HandlerShape::ROW) {
+        fn(i32 owner, i32 row) -> void selected = (fn(i32 owner, i32 row) -> void)callback;
+        selected(current_owner, ev->arg);
+        return;
+    }
+    if (handlers[row].shape == HandlerShape::NONE) {
+        fn(i32 owner) -> void plain = (fn(i32 owner) -> void)callback;
+        plain(current_owner);
         return;
     }
     callback(current_owner, NodeId(ev->id), ev->arg);
@@ -242,18 +266,6 @@ export void ask_node(borrow Request request, borrow Result<NodeId, UiError> resu
     ask(&request, (i32)&result, sizeof(Result<NodeId, UiError>));
 }
 
-/** Sends a request and receives its Result<Option<i32>, UiError> answer. */
-@safe
-export void ask_option(borrow Request request, borrow Result<Option<i32>, UiError> result) {
-    ask(&request, (i32)&result, sizeof(Result<Option<i32>, UiError>));
-}
-
-/** Sends a request and receives its Result<Option<NodeId>, UiError> answer. */
-@safe
-export void ask_node_option(borrow Request request, borrow Result<Option<NodeId>, UiError> result) {
-    ask(&request, (i32)&result, sizeof(Result<Option<NodeId>, UiError>));
-}
-
 /** Sends a request and receives its Result<Option<NodeId>, AppError> answer. */
 @safe
 export void ask_app_option(borrow Request request, borrow Result<Option<NodeId>, AppError> result) {
@@ -314,10 +326,18 @@ export NodeId bound(i32 slot) { return NodeId(bindings[slot].node); }
 @safe
 export bool word_changed(i32 slot, i32 value) {
     bool first = !bindings[slot].seen;
+    return word_differs(slot, value) && !first;
+}
+
+/** Records a scalar value that `view` did not show: a binding starts at zero.
+ * @return True when it differs from the last one.
+ */
+@safe
+export bool word_differs(i32 slot, i32 value) {
     bool same = bindings[slot].word == value;
     bindings[slot].seen = true;
     bindings[slot].word = value;
-    return !first && !same;
+    return !same;
 }
 
 bool same_bytes(char *a, str b) {
@@ -409,6 +429,58 @@ export str read_text(NodeId id) {
     ask_i32(&request, &result);
     i32 length = case result of { Ok(value) -> value; Err(_) -> 0; };
     return str { data: g_read, length: length };
+}
+
+// --- dialogs -----------------------------------------------------------------------------------
+
+// A dialog is built with the rest of `view`, but as a window of its own: it
+// stays out of the tree its markup sits in, off the desktop until it is shown.
+i32 DIALOGS_MAX = 4;
+struct Dialog {
+    i32 window;
+    i32 text;      // the label that says what is asked
+};
+Dialog dialogs[4];
+i32 dialog_count = 0;
+
+/** Records a dialog's window and the label its text goes to. */
+@safe
+export void add_dialog(NodeId window, NodeId text) {
+    if (dialog_count >= DIALOGS_MAX) {
+        log("Too many dialogs");
+        app_transport.exit();
+    }
+    dialogs[dialog_count].window = (i32)window;
+    dialogs[dialog_count].text = (i32)text;
+    dialog_count++;
+}
+
+/** Whether a node is a dialog's window. */
+@safe
+export bool is_dialog(NodeId window) {
+    i32 i = 0;
+    while (i < dialog_count) {
+        if (dialogs[i].window == (i32)window) { return true; }
+        i++;
+    }
+    return false;
+}
+
+/** The label of a dialog's window. */
+@safe
+export NodeId dialog_text(NodeId window) {
+    i32 i = 0;
+    while (i < dialog_count) {
+        if (dialogs[i].window == (i32)window) { return NodeId(dialogs[i].text); }
+        i++;
+    }
+    return window;
+}
+
+/** Puts a dialog on the desktop, or takes it off. */
+@safe
+export void show_dialog(NodeId window, bool shown) {
+    send_app_value(shown ? AppOp::SHOW_DIALOG : AppOp::HIDE_DIALOG, (i32)window, "");
 }
 
 // --- lifecycle -----------------------------------------------------------------------------

@@ -9,7 +9,8 @@ import runtime from "@app/runtime/runtime.mln";
 import terminal from "@app/terminal.mln";
 import myos_service from "@std/platform/myos/service.mln";
 import { UiOp } from "@contracts/myapp/ui.contract.mln";
-import { Request } from "@contracts/myapp/message.contract.mln";
+import { AppOp } from "@contracts/myapp/lifecycle.contract.mln";
+import { Request, RequestDomain } from "@contracts/myapp/message.contract.mln";
 import { NodeId, UiError } from "@contracts/ui/widget.contract.mln";
 import { OsService } from "@contracts/myos/services.contract.mln";
 import { ProcBindArgs, ProcSpawnArgs } from "@contracts/myos/process-args.contract.mln";
@@ -18,6 +19,7 @@ import { Pid } from "@contracts/process/control.contract.mln";
 import { SpawnError } from "@contracts/process/spawn.contract.mln";
 import { AllocationError } from "@std/memory/allocator.mln";
 import { Result } from "@std/core/result.mln";
+import { Option } from "@std/core/option.mln";
 
 // What the SDK's calls put on the wire. The transport is faked, so every call
 // here ends in recording_request, and no OS is needed.
@@ -116,6 +118,48 @@ void a_field_names_its_operation_and_node() {
     field.read();
     expect_request(5, UiOp::TEXT_COPY, 5, "read");
     assert.assert_true(g_last.result_out != 0, "read asks for an answer");
+}
+
+/*@Test "a list follows its values" { step: 5000000; }*/
+void a_list_follows_its_values() {
+    mock.of(app_transport.request).when(mock.any()).call(recording_request);
+    mock.of(app_allocator.alloc).when(mock.any()).call(test_alloc);
+    g_requests = 0;
+    elements.bind(0, NodeId(7));
+    elements.List_items(0, "a\nb");
+    assert.assert_true(g_requests == 0, "the first rows are what view built");
+    elements.List_items(0, "a\nb");
+    assert.assert_true(g_requests == 0, "the same rows send nothing");
+    elements.List_items(0, "a\nc");
+    expect_request(1, UiOp::LIST_SET_ITEMS, 7, "new rows");
+    elements.bind(1, NodeId(8));
+    elements.List_selected(1, None);
+    assert.assert_true(g_requests == 1, "the first selection is what view built");
+    elements.List_selected(1, Some(3));
+    expect_request(2, UiOp::LIST_SELECT, 8, "a selected row");
+    assert.assert_true(g_last.a1 == 3, "the row travels");
+    elements.List_selected(1, Some(3));
+    assert.assert_true(g_requests == 2, "the same row sends nothing");
+    elements.List_selected(1, None);
+    expect_request(3, UiOp::LIST_SELECT, 8, "no selection");
+    assert.assert_true(g_last.a1 == -1, "no selection is -1 on the wire");
+}
+
+/*@Test "a dialog follows when" { step: 5000000; }*/
+void a_dialog_follows_when() {
+    mock.of(app_transport.request).when(mock.any()).call(recording_request);
+    g_requests = 0;
+    elements.bind(2, NodeId(10));
+    elements.Dialog_when(2, false);
+    assert.assert_true(g_requests == 0, "a hidden dialog stays off the desktop");
+    elements.Dialog_when(2, true);
+    assert.assert_true(g_requests == 1, "it is shown when `when` turns true");
+    assert.assert_true(g_last.domain == RequestDomain::APP && g_last.op == AppOp::SHOW_DIALOG, "the shell shows it");
+    assert.assert_true(g_last.a0 == 10, "show names the dialog");
+    elements.Dialog_when(2, true);
+    assert.assert_true(g_requests == 1, "it is shown once");
+    elements.Dialog_when(2, false);
+    assert.assert_true(g_requests == 2 && g_last.op == AppOp::HIDE_DIALOG, "it is hidden when `when` turns false");
 }
 
 /*@Test "elements are one create request" { step: 5000000; }*/
