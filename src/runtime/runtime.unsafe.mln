@@ -20,6 +20,7 @@ package runtime;
 // passed as is (the calling convention ignores trailing arguments).
 
 import app_transport from "transport.mln";
+import app_allocator from "allocator.mln";
 import { Request, RequestDomain, RequestStatus, Event, EventKind } from "@contracts/myapp/message.contract.mln";
 import { UiOp } from "@contracts/myapp/ui.contract.mln";
 import { AppOp, AppError, KeyClaimError } from "@contracts/myapp/lifecycle.contract.mln";
@@ -38,6 +39,7 @@ import str from "@std/text/str.mln";
 // that with the pid -- to the server, the owner of everything this process
 // creates is the process -- and events name that pid, not this pointer.
 i32 current_owner = 0;
+i32 g_main_window = 0;
 Text<64> g_open_path;
 
 i32 annotation_i32(Result<i32, AnnotationError> value) {
@@ -81,10 +83,18 @@ export void fail_ui(UiError error) {
 // --- handler table ---------------------------------------------------------------------
 
 i32 HANDLERS_MAX = 256;
+
+// What a handler takes after its receiver, which is what its event carries.
+enum HandlerShape {
+    WORDS,  // (NodeId id, i32 arg)
+    FLAG,   // (bool on)
+}
+
 struct Handler {
     i32 owner;
     i32 key;           // node id, KEY claim token, or 0 for OPEN / CLOSE
     EventKind kind;
+    HandlerShape shape;
     fn(i32 owner, NodeId id, i32 arg) -> void callback;
 };
 Handler handlers[256];
@@ -93,6 +103,16 @@ i32 handler_count = 0;
 // Register fn for (key, kind) on the current instance.
 @safe
 export void on(i32 key, EventKind kind, fn(i32 owner, NodeId id, i32 arg) -> void callback) {
+    add_handler(key, kind, HandlerShape::WORDS, callback);
+}
+
+/** Registers a handler of a change that carries an on or off. */
+@safe
+export void on_flag(i32 key, EventKind kind, fn(i32 owner, bool on) -> void callback) {
+    add_handler(key, kind, HandlerShape::FLAG, (fn(i32 owner, NodeId id, i32 arg) -> void)callback);
+}
+
+void add_handler(i32 key, EventKind kind, HandlerShape shape, fn(i32 owner, NodeId id, i32 arg) -> void callback) {
     if (callback == 0) { return; }
     i32 i = 0;
     while (i < handler_count) {
@@ -106,18 +126,36 @@ export void on(i32 key, EventKind kind, fn(i32 owner, NodeId id, i32 arg) -> voi
     handlers[i].owner = current_owner;
     handlers[i].key = key;
     handlers[i].kind = kind;
+    handlers[i].shape = shape;
     handlers[i].callback = callback;
 }
 
-fn(i32 owner, NodeId id, i32 arg) -> void lookup(i32 owner, i32 key, EventKind kind) {
+// The row of the handler for (key, kind), or -1.
+i32 find_handler(i32 owner, i32 key, EventKind kind) {
     i32 i = 0;
     while (i < handler_count) {
         if (handlers[i].callback != 0 && handlers[i].owner == owner && handlers[i].key == key && handlers[i].kind == kind) {
-            return handlers[i].callback;
+            return i;
         }
         i++;
     }
-    return 0;
+    return -1;
+}
+
+fn(i32 owner, NodeId id, i32 arg) -> void lookup(i32 owner, i32 key, EventKind kind) {
+    i32 row = find_handler(owner, key, kind);
+    if (row < 0) { return 0; }
+    return handlers[row].callback;
+}
+
+void call_handler(i32 row, Event *ev) {
+    fn(i32 owner, NodeId id, i32 arg) -> void callback = handlers[row].callback;
+    if (handlers[row].shape == HandlerShape::FLAG) {
+        fn(i32 owner, bool on) -> void flag = (fn(i32 owner, bool on) -> void)callback;
+        flag(current_owner, ev->arg != 0);
+        return;
+    }
+    callback(current_owner, NodeId(ev->id), ev->arg);
 }
 
 void forget(i32 owner) {
@@ -192,12 +230,6 @@ export void ask_node(borrow Request request, borrow Result<NodeId, UiError> resu
     ask(&request, (i32)&result, sizeof(Result<NodeId, UiError>));
 }
 
-/** Sends a request and receives its Result<bool, UiError> answer. */
-@safe
-export void ask_bool(borrow Request request, borrow Result<bool, UiError> result) {
-    ask(&request, (i32)&result, sizeof(Result<bool, UiError>));
-}
-
 /** Sends a request and receives its Result<Option<i32>, UiError> answer. */
 @safe
 export void ask_option(borrow Request request, borrow Result<Option<i32>, UiError> result) {
@@ -233,7 +265,143 @@ void send_app_value(i32 op, i32 a0, str s0) {
     send(&request);
 }
 
+// --- bound properties ------------------------------------------------------------------------
+
+// A property of `view` that reads the state. Each pass the element's hook
+// hands in the value; what goes to the server is what differs from the last
+// value. `view` built the node with the first value, so the first pass only
+// records it. Text is kept whole on the heap: a hash would miss a change.
+i32 BINDINGS_MAX = 32;
+struct Binding {
+    i32 node;
+    bool seen;
+    i32 word;
+    char *text;
+    i32 length;
+    i32 capacity;
+};
+Binding bindings[32];
+
+/** Records the node of a bound property. */
+@safe
+export void bind(i32 slot, i32 node) {
+    if (slot >= BINDINGS_MAX) {
+        log("Too many bound properties");
+        app_transport.exit();
+    }
+    bindings[slot].node = node;
+}
+
+/** The node of a bound property. */
+@safe
+export NodeId bound(i32 slot) { return NodeId(bindings[slot].node); }
+
+/** Records a scalar value.
+ * @return True when it differs from the last one, so the screen must change.
+ */
+@safe
+export bool word_changed(i32 slot, i32 value) {
+    bool first = !bindings[slot].seen;
+    bool same = bindings[slot].word == value;
+    bindings[slot].seen = true;
+    bindings[slot].word = value;
+    return !first && !same;
+}
+
+bool same_bytes(char *a, str b) {
+    i32 i = 0;
+    while (i < b.length) {
+        if (a[i] != b.data[i]) { return false; }
+        i++;
+    }
+    return true;
+}
+
+/** Records a text value.
+ * @return True when it differs from the last one, so the screen must change.
+ */
+@safe
+export bool text_changed(i32 slot, str value) {
+    bool first = !bindings[slot].seen;
+    bindings[slot].seen = true;
+    if (!first && bindings[slot].length == value.length && same_bytes(bindings[slot].text, value)) {
+        return false;
+    }
+    if (value.length > bindings[slot].capacity) {
+        app_allocator.free((i32)bindings[slot].text);
+        i32 room = value.length + 16;
+        bindings[slot].text = case app_allocator.alloc(room) of {
+            Ok(pointer) -> (char*)pointer;
+            Err(_) -> ({ log("Out of memory for a bound text"); app_transport.exit(); (char*)0; });
+        };
+        bindings[slot].capacity = room;
+    }
+    i32 i = 0;
+    while (i < value.length) {
+        bindings[slot].text[i] = value.data[i];
+        i++;
+    }
+    bindings[slot].length = value.length;
+    return !first;
+}
+
 // --- lifecycle -----------------------------------------------------------------------------
+
+/** Prepares the process before the app's first state is made. */
+@safe
+export void enter() { app_allocator.init(); }
+
+/** Names the instance handlers are called on. */
+@safe
+export void adopt(i32 self) { current_owner = self; }
+
+/** Hands the shell the app's window. */
+@safe
+export void show_main(NodeId win) {
+    g_main_window = (i32)win;
+    send_app_value(AppOp::MAIN_WINDOW, (i32)win, "");
+}
+
+/** What the event just taken asks of the instance. */
+export enum Step {
+    Idle,     // no event is waiting
+    Handled,  // its handler has run
+    Open,     // open(opened_path())
+    Close,    // close(), then exit()
+}
+
+/** The path of the Step::Open just taken, valid until the next event. */
+@safe
+export str opened_path() { return g_open_path.as_str(); }
+
+/** Takes one event and runs its handler. */
+@safe
+export Step next() {
+    Event ev;
+    if (!app_transport.poll(&ev)) { return Step::Idle; }
+    if (ev.kind == EventKind::OPEN) {
+        g_open_path.clear();
+        g_open_path.append(str.from_c(&ev.text[0]));
+        return Step::Open;
+    }
+    if (ev.kind == EventKind::CLOSE && ev.id == g_main_window) { return Step::Close; }
+    i32 key = ev.id;
+    if (ev.kind == EventKind::KEY) { key = ev.token; }
+    i32 row = find_handler(current_owner, key, ev.kind);
+    if (row >= 0) { call_handler(row, &ev); }
+    return Step::Handled;
+}
+
+/** Blocks until an event is published. */
+@safe
+export void idle() { app_transport.idle(); }
+
+/** Tells the OS the instance is done and ends the process. */
+@safe
+export void exit() {
+    send_app_value(AppOp::EXIT, 0, "");
+    app_transport.exit();
+}
 
 // Launch `self`, an instance of the type named `type`: run its @app view
 // (returns the window), create its @timer timers, claim its @key

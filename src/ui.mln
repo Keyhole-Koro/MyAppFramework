@@ -82,14 +82,6 @@ i32 byte(str s, i32 index) {
 
 // --- widgets --------------------------------------------------------------------------------
 
-/** Reads a checkbox state, or returns an error for an invalid/non-checkbox node. */
-export Result<bool, UiError> is_checked(NodeId id) {
-    Result<bool, UiError> result = Err(UiError::NodeNotFound(id));
-    Request request = runtime.ui_request(UiOp::IS_CHECKED);
-    request.a0 = (i32)id;
-    runtime.ask_bool(&request, &result);
-    return result;
-}
 export void set_checked(NodeId id, i32 on) {
     Request request = runtime.ui_request(UiOp::SET_CHECKED);
     request.a0 = (i32)id; request.a1 = on;

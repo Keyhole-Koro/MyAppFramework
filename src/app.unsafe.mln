@@ -1,0 +1,56 @@
+package app;
+
+// The application model (docs/design/app-model.md). An app is a type that
+// implements App, and its program is one line:
+//
+//     i32 main() { return app.run<Counter>(); }
+//
+// run owns the state: an app is one process, so there is one instance. It
+// reaches the methods the compiler generates beside `view` by name: they are
+// not App's items because no app writes them.
+
+import runtime from "runtime/runtime.mln";
+import { Step } from "runtime/runtime.mln";
+import { NodeId } from "@contracts/ui/widget.contract.mln";
+
+/** What `view` returns: the app's window. */
+export typedef NodeId View;
+
+/** What the framework asks of an app's type.
+ * - start: the first state.
+ * - view: what the state looks like. It only reads the state; markup is
+ *   what it returns.
+ * - open: a path sent by another app, or "" after a launch that had none.
+ * - close: the window is closing and the process ends after this.
+ */
+export trait App {
+    Self start();
+    View (Self self) view();
+    void (borrow Self self) open(str path) { }
+    void (borrow Self self) close() { }
+}
+
+/** Runs an app until its window closes. It does not return. */
+@safe
+export i32 run<T: App>() {
+    runtime.enter();
+    T state = T::start();
+    runtime.adopt((i32)&state);
+    runtime.show_main(state.view());
+    state.__view_update();
+    state.open("");
+    state.__view_update();
+    while (1) {
+        Step step = runtime.next();
+        if (step == Step::Idle) {
+            runtime.idle();
+            continue;
+        }
+        if (step == Step::Open) { state.open(runtime.opened_path()); }
+        if (step == Step::Close) {
+            state.close();
+            runtime.exit();
+        }
+        state.__view_update();
+    }
+}

@@ -5,6 +5,9 @@ import { UiOp } from "@contracts/myapp/ui.contract.mln";
 import { Request, EventKind } from "@contracts/myapp/message.contract.mln";
 import { Result } from "@std/core/result.mln";
 import { NodeId, UiError } from "@contracts/ui/widget.contract.mln";
+import { Text } from "@std/text/text.mln";
+import { Option } from "@std/core/option.mln";
+import str from "@std/text/str.mln";
 
 // The markup vocabulary. `<Window title="A" x={0} w={400}>...</Window>` in a
 // .dom.mln source lowers to a call of the function of the same name, with
@@ -251,21 +254,24 @@ export Result<NodeId, UiError> TextInput(str placeholder, i32 x = 0, i32 y = 0, 
 }
 
 /**
- * Lowers JSX `<Checkbox text="..." x={...} y={...} checked={...} onClick={...} testId="..." />`.
+ * Lowers JSX `<Checkbox text="..." x={...} y={...} checked={...} onChange={...} testId="..." />`.
  * @param text Checkbox label text.
  * @param x Logical X coordinate (default 0).
  * @param y Logical Y coordinate (default 0).
- * @param checked Initial checked state (default 0).
- * @param onClick Click callback function pointer (default none).
+ * @param checked Checked state (default false).
+ * @param onChange Called with the new state when the user toggles it (default none).
  * @param testId Stable automation locator id (default none).
  * @return DOM Node ID.
  */
-export Result<NodeId, UiError> Checkbox(str text, i32 x = 0, i32 y = 0, i32 checked = 0, fn(i32 owner, NodeId id, i32 arg) -> void onClick = 0, str testId = "") {
+export Result<NodeId, UiError> Checkbox(str text, i32 x = 0, i32 y = 0, bool checked = false, fn(i32 owner, bool on) -> void onChange = 0, str testId = "") {
     Request request = runtime.ui_request(UiOp::CREATE_CHECKBOX);
-    request.a0 = x; request.a1 = y; request.a2 = checked;
+    request.a0 = x; request.a1 = y; request.a2 = checked ? 1 : 0;
     runtime.put_s0(&request, text); runtime.put_s1(&request, testId);
     Result<NodeId, UiError> result = create(request);
-    register_handler(result, EventKind::CLICK, onClick);
+    case result of {
+        Ok(id) -> ({ runtime.on_flag((i32)id, EventKind::CHANGE, onChange); });
+        Err(_) -> _;
+    };
     return result;
 }
 
@@ -359,8 +365,73 @@ export NodeId dom_Panel(i32 x, i32 y, i32 w, i32 h, i32 radius) { return unwrap_
 export NodeId dom_Column(i32 x, i32 y, i32 w, i32 h, i32 padding, i32 gap) { return unwrap_node(Column(x, y, w, h, padding, gap)); }
 export NodeId dom_Row(i32 x, i32 y, i32 w, i32 h, i32 padding, i32 gap) { return unwrap_node(Row(x, y, w, h, padding, gap)); }
 export NodeId dom_TextInput(str placeholder, i32 x, i32 y, i32 w, i32 h, i32 capacity, fn(i32 owner, NodeId id, i32 arg) -> void onChange, str testId) { return unwrap_node(TextInput(placeholder, x, y, w, h, capacity, onChange, testId)); }
-export NodeId dom_Checkbox(str text, i32 x, i32 y, i32 checked, fn(i32 owner, NodeId id, i32 arg) -> void onClick, str testId) { return unwrap_node(Checkbox(text, x, y, checked, onClick, testId)); }
+export NodeId dom_Checkbox(str text, i32 x, i32 y, bool checked, fn(i32 owner, bool on) -> void onChange, str testId) { return unwrap_node(Checkbox(text, x, y, checked, onChange, testId)); }
 export NodeId dom_Separator(i32 x, i32 y, i32 w) { return unwrap_node(Separator(x, y, w)); }
 export NodeId dom_Timer(i32 interval, fn(i32 owner, NodeId id, i32 arg) -> void onTick) { return unwrap_node(Timer(interval, onTick)); }
 export NodeId dom_TextArea(str name, i32 x, i32 y, i32 w, i32 h, i32 capacity, i32 readonly, fn(i32 owner, NodeId id, i32 arg) -> void onChange, str testId) { return unwrap_node(TextArea(name, x, y, w, h, capacity, readonly, onChange, testId)); }
 export NodeId dom_List(str name, i32 x, i32 y, i32 w, i32 h, i32 capacity, fn(i32 owner, NodeId id, i32 arg) -> void onChange, fn(i32 owner, NodeId id, i32 arg) -> void onActivate, str testId) { return unwrap_node(List(name, x, y, w, h, capacity, onChange, onActivate, testId)); }
+
+// --- what follows the state ------------------------------------------------------------
+
+// `.dom.mln` lowering calls these. A property of `view` that reads the state is
+// recorded with bind, and its hook, `<Tag>_<property>`, is called with the
+// value after every event. A hook sends only what changed.
+
+export void bind(i32 slot, NodeId node) { runtime.bind(slot, (i32)node); }
+
+void send_text(NodeId id, str value) {
+    Request request = runtime.ui_request(UiOp::SET_TEXT);
+    request.a0 = (i32)id;
+    runtime.put_s0(&request, value);
+    runtime.send(&request);
+}
+
+export void Label_text(i32 slot, str value) {
+    if (runtime.text_changed(slot, value)) { send_text(runtime.bound(slot), value); }
+}
+
+export void Checkbox_checked(i32 slot, bool value) {
+    if (!runtime.word_changed(slot, value ? 1 : 0)) { return; }
+    Request request = runtime.ui_request(UiOp::SET_CHECKED);
+    request.a0 = (i32)runtime.bound(slot);
+    request.a1 = value ? 1 : 0;
+    runtime.send(&request);
+}
+
+// `{"clicks: %d", c.clicks}` lowers to format, then format_int or format_str
+// per value, then format_end. Each takes what is left of the format and copies
+// the text up to the next value. The text lives here until the next format.
+Text<256> g_format;
+
+// Copies the literal text at the start of `left` and returns what follows the
+// next %d or %s.
+str format_literal(str left) {
+    i32 i = 0;
+    while (i < left.length) {
+        i32 c = left.byte(i);
+        i32 spec = left.byte(i + 1);
+        if (c == '%' && spec == '%') {
+            g_format.push((u8)'%');
+            i = i + 2;
+        } else if (c == '%') {
+            return case left.slice(i + 2, left.length) of { Some(after) -> after; None -> ""; };
+        } else {
+            g_format.push((u8)c);
+            i++;
+        }
+    }
+    return "";
+}
+
+export str format(str text) {
+    g_format.clear();
+    return format_literal(text);
+}
+
+export str format_int(str left, i32 value) {
+    Text<12> decimal = value.to_string();
+    g_format.append(decimal.as_str());
+    return format_literal(left);
+}
+
+export str format_end(str left) { return g_format.as_str(); }
