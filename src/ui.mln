@@ -6,7 +6,7 @@ import { Text } from "@std/text/text.mln";
 import ascii from "@std/text/ascii.mln";
 import { Option } from "@std/core/option.mln";
 import { Result } from "@std/core/result.mln";
-import { UiError } from "@contracts/ui/widget.contract.mln";
+import { NodeId, UiError } from "@contracts/ui/widget.contract.mln";
 import { UiOp } from "@contracts/myapp/ui.contract.mln";
 import { AppOp, AppError } from "@contracts/myapp/lifecycle.contract.mln";
 import { Request } from "@contracts/myapp/message.contract.mln";
@@ -26,9 +26,9 @@ import { Request } from "@contracts/myapp/message.contract.mln";
 
 // --- text -------------------------------------------------------------------------------------
 
-export void set_text(i32 id, str s) {
+export void set_text(NodeId id, str s) {
     Request request = runtime.ui_request(UiOp::SET_TEXT);
-    request.a0 = id;
+    request.a0 = (i32)id;
     runtime.put_s0(&request, s);
     runtime.send(&request);
 }
@@ -38,7 +38,7 @@ export void set_text(i32 id, str s) {
  * @param what What failed.
  * @param message Why, typically an error's `describe()`.
  */
-export void set_error(i32 id, str what, str message) {
+export void set_error(NodeId id, str what, str message) {
     Text<96> line = Text<96> {};
     line.clear();
     line.append(what);
@@ -51,7 +51,7 @@ export void set_error(i32 id, str what, str message) {
 // (The server keeps its own copy of every text it is given, so the app's
 // buffers are its own business.)
 Text<256> g_fmt_buf;
-export void set_text_fmt(i32 id, str fmt, str s, i32 n) {
+export void set_text_fmt(NodeId id, str fmt, str s, i32 n) {
     g_fmt_buf.clear();
     i32 i = 0;
     while (i < fmt.length) {
@@ -83,62 +83,62 @@ i32 byte(str s, i32 index) {
 // --- widgets --------------------------------------------------------------------------------
 
 /** Reads a checkbox state, or returns an error for an invalid/non-checkbox node. */
-export Result<bool, UiError> is_checked(i32 id) {
+export Result<bool, UiError> is_checked(NodeId id) {
     Result<bool, UiError> result = Err(UiError::NodeNotFound(id));
     Request request = runtime.ui_request(UiOp::IS_CHECKED);
-    request.a0 = id;
+    request.a0 = (i32)id;
     runtime.ask_bool(&request, &result);
     return result;
 }
-export void set_checked(i32 id, i32 on) {
+export void set_checked(NodeId id, i32 on) {
     Request request = runtime.ui_request(UiOp::SET_CHECKED);
-    request.a0 = id; request.a1 = on;
+    request.a0 = (i32)id; request.a1 = on;
     runtime.send(&request);
 }
 
-export void input_set(i32 id, str s) {
+export void input_set(NodeId id, str s) {
     Request request = runtime.ui_request(UiOp::INPUT_SET);
-    request.a0 = id; runtime.put_s0(&request, s);
+    request.a0 = (i32)id; runtime.put_s0(&request, s);
     runtime.send(&request);
 }
-export void area_append(i32 id, str s) {
+export void area_append(NodeId id, str s) {
     Request request = runtime.ui_request(UiOp::AREA_APPEND);
-    request.a0 = id; runtime.put_s0(&request, s);
+    request.a0 = (i32)id; runtime.put_s0(&request, s);
     runtime.send(&request);
 }
-export void area_clear(i32 id) {
+export void area_clear(NodeId id) {
     Request request = runtime.ui_request(UiOp::AREA_CLEAR);
-    request.a0 = id;
+    request.a0 = (i32)id;
     runtime.send(&request);
 }
 /** Returns TextArea line count, or an error for an invalid/non-TextArea node. */
-export Result<i32, UiError> area_lines(i32 id) {
+export Result<i32, UiError> area_lines(NodeId id) {
     Result<i32, UiError> result = Err(UiError::NodeNotFound(id));
     Request request = runtime.ui_request(UiOp::AREA_LINES);
-    request.a0 = id;
+    request.a0 = (i32)id;
     runtime.ask_i32(&request, &result);
     return result;
 }
 
-export void list_set_items(i32 id, str items) {
+export void list_set_items(NodeId id, str items) {
     Request request = runtime.ui_request(UiOp::LIST_SET_ITEMS);
-    request.a0 = id; runtime.put_s0(&request, items);
+    request.a0 = (i32)id; runtime.put_s0(&request, items);
     runtime.send(&request);
 }
 /** Returns List item count, or an error for an invalid/non-List node. */
-export Result<i32, UiError> list_count(i32 id) {
+export Result<i32, UiError> list_count(NodeId id) {
     Result<i32, UiError> result = Err(UiError::NodeNotFound(id));
     Request request = runtime.ui_request(UiOp::LIST_COUNT);
-    request.a0 = id;
+    request.a0 = (i32)id;
     runtime.ask_i32(&request, &result);
     return result;
 }
 
 // A missing selection is Ok(None); an invalid node is Err(UiError).
-export Result<Option<i32>, UiError> list_selected(i32 id) {
+export Result<Option<i32>, UiError> list_selected(NodeId id) {
     Result<Option<i32>, UiError> result = Err(UiError::NodeNotFound(id));
     Request request = runtime.ui_request(UiOp::LIST_SELECTED);
-    request.a0 = id;
+    request.a0 = (i32)id;
     runtime.ask_option(&request, &result);
     return result;
 }
@@ -146,60 +146,60 @@ export Result<Option<i32>, UiError> list_selected(i32 id) {
 
 // --- focus and windows ------------------------------------------------------------------------
 
-export void focus(i32 id) {
+export void focus(NodeId id) {
     Request request = runtime.ui_request(UiOp::FOCUS);
-    request.a0 = id;
+    request.a0 = (i32)id;
     runtime.send(&request);
 }
-export void focus_window(i32 win) {
+export void focus_window(NodeId win) {
     Request request = runtime.ui_request(UiOp::FOCUS_WINDOW);
-    request.a0 = win;
+    request.a0 = (i32)win;
     runtime.send(&request);
 }
 
 // Close a window the app opened itself (a dialog). The app's own main
 // window is closed by the framework when the user closes it.
-export void close(i32 win) {
+export void close(NodeId win) {
     Request request = runtime.ui_request(UiOp::CLOSE);
-    request.a0 = win;
+    request.a0 = (i32)win;
     runtime.send(&request);
 }
 
-export Result<Option<i32>, UiError> window_of(i32 id) {
-    Result<Option<i32>, UiError> result = Err(UiError::NodeNotFound(id));
+export Result<Option<NodeId>, UiError> window_of(NodeId id) {
+    Result<Option<NodeId>, UiError> result = Err(UiError::NodeNotFound(id));
     Request request = runtime.ui_request(UiOp::WINDOW_OF);
-    request.a0 = id;
-    runtime.ask_option(&request, &result);
+    request.a0 = (i32)id;
+    runtime.ask_node_option(&request, &result);
     return result;
 }
 
-export Result<i32, UiError> window_x(i32 win) {
+export Result<i32, UiError> window_x(NodeId win) {
     Result<i32, UiError> result = Err(UiError::NodeNotFound(win));
     Request request = runtime.ui_request(UiOp::WINDOW_X);
-    request.a0 = win;
+    request.a0 = (i32)win;
     runtime.ask_i32(&request, &result);
     return result;
 }
 
-export Result<i32, UiError> window_y(i32 win) {
+export Result<i32, UiError> window_y(NodeId win) {
     Result<i32, UiError> result = Err(UiError::NodeNotFound(win));
     Request request = runtime.ui_request(UiOp::WINDOW_Y);
-    request.a0 = win;
+    request.a0 = (i32)win;
     runtime.ask_i32(&request, &result);
     return result;
 }
 
 // Mount a tree the app built (a dialog) on the desktop and focus it.
-export void show(i32 win) {
+export void show(NodeId win) {
     Request request = runtime.ui_request(UiOp::SHOW);
-    request.a0 = win;
+    request.a0 = (i32)win;
     runtime.send(&request);
 }
 
 // Name a node for automation (dom-tester locators).
-export void test_id(i32 id, str name) {
+export void test_id(NodeId id, str name) {
     Request request = runtime.ui_request(UiOp::TEST_ID);
-    request.a0 = id; runtime.put_s0(&request, name);
+    request.a0 = (i32)id; runtime.put_s0(&request, name);
     runtime.send(&request);
 }
 
@@ -233,8 +233,8 @@ export const i32 ACCENT = 0x3B82F6;         // highlights and primary actions
  * @return Ok(Some(window)) when delivered immediately, Ok(None) while the
  *         target app is starting, or Err when opening cannot be completed.
  */
-export Result<Option<i32>, AppError> open(str path) {
-    Result<Option<i32>, AppError> result = Err(AppError::NoOpenHandler);
+export Result<Option<NodeId>, AppError> open(str path) {
+    Result<Option<NodeId>, AppError> result = Err(AppError::NoOpenHandler);
     Request request = runtime.app_request(AppOp::OPEN);
     runtime.put_s0(&request, path);
     runtime.ask_app_option(&request, &result);

@@ -3,7 +3,7 @@ package ui_text;
 import runtime from "runtime/runtime.mln";
 import { Text } from "@std/text/text.mln";
 import { Result } from "@std/core/result.mln";
-import { UiError } from "@contracts/ui/widget.contract.mln";
+import { NodeId, UiError } from "@contracts/ui/widget.contract.mln";
 import { UiOp } from "@contracts/myapp/ui.contract.mln";
 import { Request } from "@contracts/myapp/message.contract.mln";
 
@@ -13,18 +13,18 @@ import { Request } from "@contracts/myapp/message.contract.mln";
 //     import { text_copy } from "@app/ui_text.mln";
 //     text_copy<128>(id, &n.typed);
 
-export Result<i32, UiError> copy_text(i32 id, char *out, i32 cap) {
+export Result<i32, UiError> copy_text(NodeId id, char *out, i32 cap) {
     Result<i32, UiError> result = Err(UiError::NodeNotFound(id));
     Request request = runtime.ui_request(UiOp::TEXT_COPY);
-    request.a0 = id; request.a1 = (i32)out; request.a2 = cap;
+    request.a0 = (i32)id; request.a1 = (i32)out; request.a2 = cap;
     runtime.ask_i32(&request, &result);
     return result;
 }
 
-export Result<i32, UiError> copy_item(i32 id, i32 index, char *out, i32 cap) {
+export Result<i32, UiError> copy_item(NodeId id, i32 index, char *out, i32 cap) {
     Result<i32, UiError> result = Err(UiError::InvalidIndex(index));
     Request request = runtime.ui_request(UiOp::LIST_ITEM);
-    request.a0 = id; request.a1 = index; request.a2 = (i32)out; request.a3 = cap;
+    request.a0 = (i32)id; request.a1 = index; request.a2 = (i32)out; request.a3 = cap;
     runtime.ask_i32(&request, &result);
     return result;
 }
@@ -33,7 +33,7 @@ export Result<i32, UiError> copy_item(i32 id, i32 index, char *out, i32 cap) {
  * @return Ok(length), or a UI error for an invalid node.
  */
 @safe
-export Result<i32, UiError> text_copy<const N>(i32 id, borrow Text<N> out) {
+export Result<i32, UiError> text_copy<const N>(NodeId id, borrow Text<N> out) {
     Result<i32, UiError> result = copy_text(id, out.as_ptr(), out.data.length);
     out.sync_from_ptr();
     return result;
@@ -43,7 +43,7 @@ export Result<i32, UiError> text_copy<const N>(i32 id, borrow Text<N> out) {
  * @return Ok(length), or a UI error for an invalid node or row.
  */
 @safe
-export Result<i32, UiError> list_item<const N>(i32 id, i32 index, borrow Text<N> out) {
+export Result<i32, UiError> list_item<const N>(NodeId id, i32 index, borrow Text<N> out) {
     Result<i32, UiError> result = copy_item(id, index, out.as_ptr(), out.data.length);
     out.sync_from_ptr();
     return result;

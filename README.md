@@ -44,17 +44,17 @@ import elements from "../../../MyAppFramework/src/elements.mln";
 import ui from "../../../MyAppFramework/src/ui.mln";
 import { app, timer } from "../../../MyAppFramework/src/annotations.mln";
 
-struct Counter { i32 clicks; i32 label; };
+struct Counter { i32 clicks; NodeId label; };
 
 @app
-i32 (borrow Counter c) view() {
+NodeId (borrow Counter c) view() {
     return <Window title="Counter" w={400} h={272}>
         <Label ref={c.label} text="clicks: 0" bold={1} />
         <PrimaryButton text="Click me" w={120} h={36} onClick={c.click} />
     </Window>;
 }
 
-void (borrow Counter c) click(i32 id) {
+void (borrow Counter c) click(NodeId id) {
     c.clicks = c.clicks + 1;
     ui.set_text_fmt(c.label, "clicks: %d", "", c.clicks);
 }

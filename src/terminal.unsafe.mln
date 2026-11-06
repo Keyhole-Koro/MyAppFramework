@@ -8,18 +8,19 @@ import myos_service from "@std/platform/myos/service.mln";
 import { OsService } from "@contracts/myos/services.contract.mln";
 import { Result } from "@std/core/result.mln";
 import { Text } from "@std/text/text.mln";
+import { NodeId } from "@contracts/ui/widget.contract.mln";
 import { SpawnError } from "@contracts/process/spawn.contract.mln";
 import { ProcSpawnArgs, ProcBindArgs, ProcUnbindArgs } from "@contracts/myos/process-args.contract.mln";
 
 // Start it with its stdout already going to TextArea `node` (one of
 // ours): bound before it runs, so its first output cannot slip past.
 @safe
-export Result<i32, SpawnError> spawn_bound(str path, i32 node) {
+export Result<i32, SpawnError> spawn_bound(str path, NodeId node) {
     Text<128> c = Text<128> {};
     c.append(path);
     Result<i32, SpawnError> result;
     ProcSpawnArgs<Result<i32, SpawnError>> args = ProcSpawnArgs<Result<i32, SpawnError>> {
-        path: c.as_ptr(), stdout_node: node, result_out: &result
+        path: c.as_ptr(), stdout_node: (i32)node, result_out: &result
     };
     myos_service.call(OsService::PROC_SPAWN, (i32)(&args));
     return result;
@@ -27,8 +28,8 @@ export Result<i32, SpawnError> spawn_bound(str path, i32 node) {
 
 // Send the process's stdout to TextArea `node` (one of ours).
 @safe
-export void bind(i32 pid, i32 node) {
-    ProcBindArgs args = ProcBindArgs { pid: pid, output_node: node };
+export void bind(i32 pid, NodeId node) {
+    ProcBindArgs args = ProcBindArgs { pid: pid, output_node: (i32)node };
     myos_service.call(OsService::PROC_BIND, (i32)(&args));
 }
 
