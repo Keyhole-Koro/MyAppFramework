@@ -227,16 +227,8 @@ export void ask_key(borrow Request request, borrow Result<i32, KeyClaimError> re
 
 /** Sends a request and receives its Result<_, UiError> answer. */
 @safe
-export void ask_unit(borrow Request request, borrow Result<_, UiError> result) {
-    ask(request, (i32)result, sizeof(Result<_, UiError>));
-}
-
 /** Sends a request and receives its Result<_, AppError> answer. */
 @safe
-export void ask_app_unit(borrow Request request, borrow Result<_, AppError> result) {
-    ask(request, (i32)result, sizeof(Result<_, AppError>));
-}
-
 void send_app_value(i32 op, i32 a0, str s0) {
     Request request = app_request(op);
     request.a0 = a0;
