@@ -30,13 +30,13 @@ import { UiError } from "@contracts/ui/widget.contract.mln";
 // Children of an element are attached with the `append_child` in scope.
 Result<i32, UiError> create(Request request) {
     Result<i32, UiError> result = Err(UiError::UnknownOperation(request.op));
-    runtime.ask_i32(&mut request, &mut result);
+    runtime.ask_i32(&request, &result);
     return result;
 }
 
-void register_handler(borrow Result<i32, UiError> result, EventKind kind,
+void register_handler(Result<i32, UiError> result, EventKind kind,
                       fn(i32 owner, i32 id, i32 arg) -> void callback) {
-    case *result of {
+    case result of {
         Ok(id) -> ({ runtime.on(id, kind, callback); });
         Err(_) -> _;
     };
@@ -82,7 +82,7 @@ export Result<_, UiError> append_child(i32 parent, i32 child) {
 export Result<i32, UiError> Window(str title, i32 x = 0, i32 y = 0, i32 w = 400, i32 h = 300, str testId = "") {
     Request request = runtime.ui_request(UiOp::CREATE_WINDOW);
     request.a0 = x; request.a1 = y; request.a2 = w; request.a3 = h;
-    runtime.put_s0(&mut request, title); runtime.put_s1(&mut request, testId);
+    runtime.put_s0(&request, title); runtime.put_s1(&request, testId);
     return create(request);
 }
 
@@ -100,9 +100,9 @@ export Result<i32, UiError> Window(str title, i32 x = 0, i32 y = 0, i32 w = 400,
 export Result<i32, UiError> Button(str text, i32 x = 0, i32 y = 0, i32 w = 90, i32 h = 34, fn(i32 owner, i32 id, i32 arg) -> void onClick = 0, str testId = "") {
     Request request = runtime.ui_request(UiOp::CREATE_BUTTON);
     request.a0 = x; request.a1 = y; request.a2 = w; request.a3 = h;
-    runtime.put_s0(&mut request, text); runtime.put_s1(&mut request, testId);
+    runtime.put_s0(&request, text); runtime.put_s1(&request, testId);
     Result<i32, UiError> result = create(request);
-    register_handler(&result, EventKind::CLICK, onClick);
+    register_handler(result, EventKind::CLICK, onClick);
     return result;
 }
 
@@ -121,9 +121,9 @@ export Result<i32, UiError> Button(str text, i32 x = 0, i32 y = 0, i32 w = 90, i
 export Result<i32, UiError> PrimaryButton(str text, i32 x = 0, i32 y = 0, i32 w = 90, i32 h = 34, fn(i32 owner, i32 id, i32 arg) -> void onClick = 0, str testId = "") {
     Request request = runtime.ui_request(UiOp::CREATE_PRIMARY_BUTTON);
     request.a0 = x; request.a1 = y; request.a2 = w; request.a3 = h;
-    runtime.put_s0(&mut request, text); runtime.put_s1(&mut request, testId);
+    runtime.put_s0(&request, text); runtime.put_s1(&request, testId);
     Result<i32, UiError> result = create(request);
-    register_handler(&result, EventKind::CLICK, onClick);
+    register_handler(result, EventKind::CLICK, onClick);
     return result;
 }
 
@@ -138,7 +138,7 @@ export Result<i32, UiError> PrimaryButton(str text, i32 x = 0, i32 y = 0, i32 w 
 export Result<i32, UiError> Text(str text, i32 x = 0, i32 y = 0, str testId = "") {
     Request request = runtime.ui_request(UiOp::CREATE_TEXT);
     request.a0 = x; request.a1 = y;
-    runtime.put_s0(&mut request, text); runtime.put_s1(&mut request, testId);
+    runtime.put_s0(&request, text); runtime.put_s1(&request, testId);
     return create(request);
 }
 
@@ -156,7 +156,7 @@ export Result<i32, UiError> Text(str text, i32 x = 0, i32 y = 0, str testId = ""
 export Result<i32, UiError> Label(str text, i32 x = 0, i32 y = 0, i32 color = 0, i32 bold = 0, str testId = "") {
     Request request = runtime.ui_request(UiOp::CREATE_LABEL);
     request.a0 = x; request.a1 = y; request.a2 = color; request.a3 = bold;
-    runtime.put_s0(&mut request, text); runtime.put_s1(&mut request, testId);
+    runtime.put_s0(&request, text); runtime.put_s1(&request, testId);
     return create(request);
 }
 
@@ -244,9 +244,9 @@ export Result<i32, UiError> Row(i32 x = 0, i32 y = 0, i32 w = 100, i32 h = 34,
 export Result<i32, UiError> TextInput(str placeholder, i32 x = 0, i32 y = 0, i32 w = 200, i32 h = 34, i32 capacity = 64, fn(i32 owner, i32 id, i32 arg) -> void onChange = 0, str testId = "") {
     Request request = runtime.ui_request(UiOp::CREATE_TEXT_INPUT);
     request.a0 = x; request.a1 = y; request.a2 = w; request.a3 = h; request.a4 = capacity;
-    runtime.put_s0(&mut request, placeholder); runtime.put_s1(&mut request, testId);
+    runtime.put_s0(&request, placeholder); runtime.put_s1(&request, testId);
     Result<i32, UiError> result = create(request);
-    register_handler(&result, EventKind::CHANGE, onChange);
+    register_handler(result, EventKind::CHANGE, onChange);
     return result;
 }
 
@@ -263,9 +263,9 @@ export Result<i32, UiError> TextInput(str placeholder, i32 x = 0, i32 y = 0, i32
 export Result<i32, UiError> Checkbox(str text, i32 x = 0, i32 y = 0, i32 checked = 0, fn(i32 owner, i32 id, i32 arg) -> void onClick = 0, str testId = "") {
     Request request = runtime.ui_request(UiOp::CREATE_CHECKBOX);
     request.a0 = x; request.a1 = y; request.a2 = checked;
-    runtime.put_s0(&mut request, text); runtime.put_s1(&mut request, testId);
+    runtime.put_s0(&request, text); runtime.put_s1(&request, testId);
     Result<i32, UiError> result = create(request);
-    register_handler(&result, EventKind::CLICK, onClick);
+    register_handler(result, EventKind::CLICK, onClick);
     return result;
 }
 
@@ -292,7 +292,7 @@ export Result<i32, UiError> Timer(i32 interval, fn(i32 owner, i32 id, i32 arg) -
     Request request = runtime.ui_request(UiOp::CREATE_TIMER);
     request.a0 = interval;
     Result<i32, UiError> result = create(request);
-    register_handler(&result, EventKind::TIMER, onTick);
+    register_handler(result, EventKind::TIMER, onTick);
     return result;
 }
 
@@ -313,9 +313,9 @@ export Result<i32, UiError> TextArea(str name, i32 x = 0, i32 y = 0, i32 w = 300
     Request request = runtime.ui_request(UiOp::CREATE_TEXT_AREA);
     request.a0 = x; request.a1 = y; request.a2 = w; request.a3 = h;
     request.a4 = capacity; request.a5 = readonly;
-    runtime.put_s0(&mut request, name); runtime.put_s1(&mut request, testId);
+    runtime.put_s0(&request, name); runtime.put_s1(&request, testId);
     Result<i32, UiError> result = create(request);
-    register_handler(&result, EventKind::CHANGE, onChange);
+    register_handler(result, EventKind::CHANGE, onChange);
     return result;
 }
 
@@ -337,10 +337,10 @@ export Result<i32, UiError> TextArea(str name, i32 x = 0, i32 y = 0, i32 w = 300
 export Result<i32, UiError> List(str name, i32 x = 0, i32 y = 0, i32 w = 300, i32 h = 200, i32 capacity = 1024, fn(i32 owner, i32 id, i32 arg) -> void onChange = 0, fn(i32 owner, i32 id, i32 arg) -> void onActivate = 0, str testId = "") {
     Request request = runtime.ui_request(UiOp::CREATE_LIST);
     request.a0 = x; request.a1 = y; request.a2 = w; request.a3 = h; request.a4 = capacity;
-    runtime.put_s0(&mut request, name); runtime.put_s1(&mut request, testId);
+    runtime.put_s0(&request, name); runtime.put_s1(&request, testId);
     Result<i32, UiError> result = create(request);
-    register_handler(&result, EventKind::CHANGE, onChange);
-    register_handler(&result, EventKind::ACTIVATE, onActivate);
+    register_handler(result, EventKind::CHANGE, onChange);
+    register_handler(result, EventKind::ACTIVATE, onActivate);
     return result;
 }
 

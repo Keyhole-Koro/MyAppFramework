@@ -45,7 +45,7 @@ struct Counter {
 };
 
 @app                                                     // view に付ける = この型はアプリ
-i32 (borrow mut Counter c) view() {
+i32 (borrow Counter c) view() {
     c.step = 1;                                         // 0 以外の初期値はここで
     return <Window title="Counter" x={96} y={72} w={400} h={272}>
         <Label ref={c.label} text="clicks: 0" bold={1} testId="counter" />
@@ -53,7 +53,7 @@ i32 (borrow mut Counter c) view() {
     </Window>;
 }
 
-void (borrow mut Counter c) click(i32 id) {
+void (borrow Counter c) click(i32 id) {
     c.clicks = c.clicks + c.step;
     ui.set_text_fmt(c.label, "clicks: %d", "", c.clicks);
 }
@@ -69,11 +69,11 @@ void (borrow mut Counter c) click(i32 id) {
   ヘッダから `@app` 行を読む。Framework は特定のアプリを知らず、MyOS image にアプリの
   コードをリンクもしない。MyOS リポジトリの `src/apps/` は配布する source package の置き場で、
   MyOS 実装層ではない。
-- **レシーバは参照** (`borrow mut Counter c`)。framework はインスタンスの
+- **レシーバは参照** (`borrow Counter c`)。framework はインスタンスの
   アドレスを第一引数に渡すので、値レシーバ（move）は使えない（コンパイルエラー）。
 - **`ref={c.label}`** はそのノードの id をフィールドに書く。木を歩いて id を
   取り直すコードは要らない。
-- **テキストはアプリのバッファへ**：`text_copy<N>(id, &mut out)`（`@app/ui_text.mln`） は
+- **テキストはアプリのバッファへ**：`text_copy<N>(id, &out)`（`@app/ui_text.mln`） は
   `Result<i32, UiError>` を返す。サーバの中を指すポインタは返ってこない
   （`char g_buf[...]` をモジュール変数に置く）。
 - **省略できるプロパティ**: `x`/`y`（親原点）、`w`/`h`、`color`、`bold`、
@@ -108,7 +108,7 @@ wire 上では **i32 と char\*** を使う。
 `Result` / `Option`をcopy-outする。`Node*`などserver内部のポインタは跨がない。
 この面は既にメッセージ／syscall の client stub として実装されている。
 
-- テキスト: `set_text`, `text_copy<N>(id, &mut out) -> Result<i32, UiError>`（`@app/ui_text.mln`）,
+- テキスト: `set_text`, `text_copy<N>(id, &out) -> Result<i32, UiError>`（`@app/ui_text.mln`）,
   `set_text_fmt(id, "%d / %s", a, b)`
   （ラベルはポインタを保持するので、書式結果はラベルごとのバッファに置かれる）
 - ウィジェット: `is_checked` (`Result<bool, UiError>`), `set_checked`, `input_set`,
