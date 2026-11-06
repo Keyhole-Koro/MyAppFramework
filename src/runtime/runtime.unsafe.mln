@@ -469,19 +469,8 @@ export void exit() {
     app_transport.exit();
 }
 
-// Launch `self`, an instance of the type named `type`: run its @app view
-// (returns the window), create its @timer timers, claim its @key
-// shortcuts and remember its @open / @on_close methods. The annotation
-// rows are read here, in the app, so the OS needs to know nothing about
-// those annotations but @app itself.
-export void start(i32 self, str type) {
-    current_owner = self;   // for the rest of the process's life
-    Annotations app = annotations.where("app", type);
-    if (app.next()) {
-        fn(i32 self) -> NodeId view = (fn(i32 self) -> NodeId)annotation_code(app.fn());
-        NodeId win = view(self);
-        send_app_value(AppOp::MAIN_WINDOW, (i32)win, "");
-    }
+// Creates the @timer timers of type `type` and claims its @key shortcuts.
+void start_annotated(str type) {
     Annotations timers = annotations.where("timer", type);
     while (timers.next()) {
         Result<NodeId, UiError> created = Err(UiError::TimerLimit);
@@ -504,6 +493,29 @@ export void start(i32 self, str type) {
             Err(_) -> log("Could not register app keyboard shortcut");
         };
     }
+}
+
+/** Starts what the @app type's annotations ask for: its timers and keys. */
+@safe
+export void start_annotations() {
+    Annotations rows = annotations.named("app");
+    if (rows.next()) { start_annotated(annotation_text(rows.type())); }
+}
+
+// Launch `self`, an instance of the type named `type`: run its @app view
+// (returns the window), create its @timer timers, claim its @key
+// shortcuts and remember its @open / @on_close methods. The annotation
+// rows are read here, in the app, so the OS needs to know nothing about
+// those annotations but @app itself.
+export void start(i32 self, str type) {
+    current_owner = self;   // for the rest of the process's life
+    Annotations app = annotations.where("app", type);
+    if (app.next()) {
+        fn(i32 self) -> NodeId view = (fn(i32 self) -> NodeId)annotation_code(app.fn());
+        NodeId win = view(self);
+        send_app_value(AppOp::MAIN_WINDOW, (i32)win, "");
+    }
+    start_annotated(type);
     Annotations opens = annotations.where("open", type);
     if (opens.next()) {
         on(0, EventKind::OPEN,

@@ -37,6 +37,7 @@ export i32 run<T: App>() {
     T state = T::start();
     runtime.adopt((i32)&state);
     runtime.show_main(state.view());
+    runtime.start_annotations();
     state.__view_update();
     state.open("");
     state.__view_update();
