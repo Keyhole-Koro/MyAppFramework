@@ -3,7 +3,14 @@ package terminal;
 // MyAppFramework's UI-specific process integration: route a child process's
 // stdout to one of this app's TextAreas. Generic process control lives in
 // MyStdLib/hosted/process.mln.
+//
+// A TextLog only grows for the app that holds it. The OS writes a child's
+// output to the log's node, so what needs that node happens here, and the app
+// hands over the log, never a node.
 
+import runtime from "runtime/runtime.mln";
+import ui from "ui.mln";
+import { TextLog } from "ui.mln";
 import myos_service from "@std/platform/myos/service.mln";
 import { OsService } from "@contracts/myos/services.contract.mln";
 import { Result } from "@std/core/result.mln";
@@ -13,13 +20,13 @@ import { SpawnError } from "@contracts/process/spawn.contract.mln";
 import { Pid } from "@contracts/process/control.contract.mln";
 import { ProcSpawnArgs, ProcBindArgs, ProcUnbindArgs } from "@contracts/myos/process-args.contract.mln";
 
-// Start it with its stdout already going to TextArea `node` (one of
-// ours): bound before it runs, so its first output cannot slip past.
+// Start it with its stdout already going to `log`: bound before it runs,
+// so its first output cannot slip past.
 @safe
-export Result<Pid, SpawnError> spawn_bound(str path, NodeId node) {
+export Result<Pid, SpawnError> spawn_bound(str path, TextLog log) {
     Result<Pid, SpawnError> result;
     ProcSpawnArgs<Result<Pid, SpawnError>> args = ProcSpawnArgs<Result<Pid, SpawnError>> {
-        path: path.data, path_length: path.length, stdout_node: (i32)node, result_out: &result
+        path: path.data, path_length: path.length, stdout_node: (i32)runtime.part_node((i32)log), result_out: &result
     };
     myos_service.call(OsService::PROC_SPAWN, (i32)(&args));
     return result;
@@ -37,3 +44,7 @@ export void unbind(Pid pid) {
     ProcUnbindArgs args = ProcUnbindArgs { pid: (i32)pid };
     myos_service.call(OsService::PROC_UNBIND, (i32)(&args));
 }
+
+/** Empties `log`, as a shell's `clear` does. */
+@safe
+export void clear(TextLog log) { ui.area_clear(runtime.part_node((i32)log)); }

@@ -6,7 +6,7 @@ import { Request, EventKind } from "@contracts/myapp/message.contract.mln";
 import { Result } from "@std/core/result.mln";
 import { NodeId, UiError } from "@contracts/ui/widget.contract.mln";
 import ui from "ui.mln";
-import { TextField } from "ui.mln";
+import { TextField, TextLog } from "ui.mln";
 import { Text } from "@std/text/text.mln";
 import { Option } from "@std/core/option.mln";
 import str from "@std/text/str.mln";
@@ -314,8 +314,11 @@ export Result<NodeId, UiError> Timer(i32 interval, fn(i32 owner, NodeId id, i32 
 }
 
 /**
- * Lowers JSX `<TextArea name="..." x={...} y={...} w={...} h={...} capacity={...} readonly={...} onChange={...} testId="..." />`.
+ * Lowers JSX `<TextArea name="..." field={...} log={...} text="..." x={...} y={...} w={...} h={...} capacity={...} readonly={...} onChange={...} testId="..." />`.
  * @param name Node name identifier.
+ * @param field The part that reads and writes the text (default none).
+ * @param log The part that adds to the text (default none).
+ * @param text The text it starts with (default none).
  * @param x Logical X coordinate (default 0).
  * @param y Logical Y coordinate (default 0).
  * @param w Logical width (default 300).
@@ -326,12 +329,20 @@ export Result<NodeId, UiError> Timer(i32 interval, fn(i32 owner, NodeId id, i32 
  * @param testId Stable automation locator id (default none).
  * @return DOM Node ID.
  */
-export Result<NodeId, UiError> TextArea(str name, i32 x = 0, i32 y = 0, i32 w = 300, i32 h = 200, i32 capacity = 1024, i32 readonly = 0, fn(i32 owner, NodeId id, i32 arg) -> void onChange = 0, str testId = "") {
+export Result<NodeId, UiError> TextArea(str name, TextField field = 0, TextLog log = 0, str text = "", i32 x = 0, i32 y = 0, i32 w = 300, i32 h = 200, i32 capacity = 1024, i32 readonly = 0, fn(i32 owner, NodeId id, i32 arg) -> void onChange = 0, str testId = "") {
     Request request = runtime.ui_request(UiOp::CREATE_TEXT_AREA);
     request.a0 = x; request.a1 = y; request.a2 = w; request.a3 = h;
     request.a4 = capacity; request.a5 = readonly;
     runtime.put_s0(&request, name); runtime.put_s1(&request, testId);
     Result<NodeId, UiError> result = create(request);
+    case result of {
+        Ok(id) -> ({
+            runtime.attach((i32)field, id);
+            runtime.attach((i32)log, id);
+            if (!text.is_empty()) { ui.area_append(id, text); }
+        });
+        Err(_) -> _;
+    };
     register_handler(result, EventKind::CHANGE, onChange);
     return result;
 }
@@ -379,7 +390,7 @@ export NodeId dom_TextInput(str placeholder, TextField field, i32 x, i32 y, i32 
 export NodeId dom_Checkbox(str text, i32 x, i32 y, bool checked, fn(i32 owner, bool on) -> void onChange, str testId) { return unwrap_node(Checkbox(text, x, y, checked, onChange, testId)); }
 export NodeId dom_Separator(i32 x, i32 y, i32 w) { return unwrap_node(Separator(x, y, w)); }
 export NodeId dom_Timer(i32 interval, fn(i32 owner, NodeId id, i32 arg) -> void onTick) { return unwrap_node(Timer(interval, onTick)); }
-export NodeId dom_TextArea(str name, i32 x, i32 y, i32 w, i32 h, i32 capacity, i32 readonly, fn(i32 owner, NodeId id, i32 arg) -> void onChange, str testId) { return unwrap_node(TextArea(name, x, y, w, h, capacity, readonly, onChange, testId)); }
+export NodeId dom_TextArea(str name, TextField field, TextLog log, str text, i32 x, i32 y, i32 w, i32 h, i32 capacity, i32 readonly, fn(i32 owner, NodeId id, i32 arg) -> void onChange, str testId) { return unwrap_node(TextArea(name, field, log, text, x, y, w, h, capacity, readonly, onChange, testId)); }
 export NodeId dom_List(str name, i32 x, i32 y, i32 w, i32 h, i32 capacity, fn(i32 owner, NodeId id, i32 arg) -> void onChange, fn(i32 owner, NodeId id, i32 arg) -> void onActivate, str testId) { return unwrap_node(List(name, x, y, w, h, capacity, onChange, onActivate, testId)); }
 
 // --- what follows the state ------------------------------------------------------------

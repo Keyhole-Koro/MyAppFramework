@@ -1,7 +1,7 @@
 import assert from "@std/testing/assert.mln";
 import mock from "../../../toolchain/MyLangTestKit/runtime/facade.mln";
 import ui from "@app/ui.mln";
-import { TextField } from "@app/ui.mln";
+import { TextField, TextLog } from "@app/ui.mln";
 import elements from "@app/elements.mln";
 import app_transport from "@app/runtime/transport.mln";
 import app_allocator from "@app/runtime/allocator.mln";
@@ -12,9 +12,10 @@ import { UiOp } from "@contracts/myapp/ui.contract.mln";
 import { Request } from "@contracts/myapp/message.contract.mln";
 import { NodeId, UiError } from "@contracts/ui/widget.contract.mln";
 import { OsService } from "@contracts/myos/services.contract.mln";
-import { ProcBindArgs } from "@contracts/myos/process-args.contract.mln";
+import { ProcBindArgs, ProcSpawnArgs } from "@contracts/myos/process-args.contract.mln";
 import { SyscallFailure } from "@contracts/myos/syscall.contract.mln";
 import { Pid } from "@contracts/process/control.contract.mln";
+import { SpawnError } from "@contracts/process/spawn.contract.mln";
 import { AllocationError } from "@std/memory/allocator.mln";
 import { Result } from "@std/core/result.mln";
 
@@ -47,6 +48,15 @@ Result<i32, SyscallFailure> recording_service(i32 service, i32 args) {
     g_service = service;
     g_bound_pid = bound->pid;
     g_bound_node = bound->output_node;
+    return Ok(0);
+}
+
+i32 g_spawn_node = 0;
+
+Result<i32, SyscallFailure> recording_spawn(i32 service, i32 args) {
+    ProcSpawnArgs<Result<Pid, SpawnError>> *spawn = (ProcSpawnArgs<Result<Pid, SpawnError>> *)args;
+    g_service = service;
+    g_spawn_node = spawn->stdout_node;
     return Ok(0);
 }
 
@@ -150,4 +160,38 @@ void a_terminal_binds_a_process_to_one_of_its_nodes() {
     terminal.bind(Pid(12), NodeId(34));
     assert.assert_true(g_service == OsService::PROC_BIND, "bind names the service");
     assert.assert_true(g_bound_pid == 12 && g_bound_node == 34, "bind carries the pid and the node");
+}
+
+/*@Test "a log adds to its node and goes to a child by itself" { step: 5000000; }*/
+void a_log_adds_to_its_node_and_goes_to_a_child_by_itself() {
+    mock.of(app_transport.request).when(mock.any()).call(recording_request);
+    mock.of(myos_service.call).when(mock.any(), mock.any()).call(recording_spawn);
+    g_requests = 0;
+    TextLog log = ui.log();
+    runtime.attach((i32)log, NodeId(6));
+    log.append("out");
+    expect_request(1, UiOp::AREA_APPEND, 6, "append");
+    assert.assert_true(g_last.s0_len == 3, "append carries the text");
+    terminal.clear(log);
+    expect_request(2, UiOp::AREA_CLEAR, 6, "clear");
+    terminal.spawn_bound("hello", log);
+    assert.assert_true(g_service == OsService::PROC_SPAWN, "spawn_bound names the service");
+    assert.assert_true(g_spawn_node == 6, "spawn_bound carries the log's node");
+}
+
+NodeId area_markup(TextField field, TextLog log) {
+    return <TextArea name="a" field={field} log={log} text="hi" />;
+}
+
+/*@Test "a text area takes its parts and its first text" { step: 5000000; }*/
+void a_text_area_takes_its_parts_and_its_first_text() {
+    mock.of(app_transport.request).when(mock.any()).call(answering_request);
+    g_requests = 0;
+    TextField field = ui.field();
+    TextLog log = ui.log();
+    NodeId area = area_markup(field, log);
+    assert.assert_true((i32)runtime.part_node((i32)field) == (i32)area, "the field names the area");
+    assert.assert_true((i32)runtime.part_node((i32)log) == (i32)area, "the log names the area");
+    expect_request(2, UiOp::AREA_APPEND, (i32)area, "text");
+    assert.assert_true(g_last.s0_len == 2, "text is added to the area");
 }

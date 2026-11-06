@@ -34,7 +34,7 @@ layer; shared service identifiers and filesystem semantics live under
 | `src/runtime/transport.mln` | `Request` / `Event` carriers on top of MyStdLib's MyOS syscall binding |
 | `src/runtime/runtime.mln` | the app side: handler table, `start()` (runs the @app view, sets up @timer / @key / @open / @on_close from the app's own annotation rows), `run()` (the event loop), `log()` |
 | `src/runtime/app_main.mln` | the process entry: finds the @app row in the image, starts the instance, runs the loop |
-| `src/terminal.mln` | UI-specific child stdout ↔ TextArea binding; generic process control is MyStdLib |
+| `src/terminal.mln` | UI-specific child stdout ↔ TextLog binding; generic process control is MyStdLib |
 | `docs/APP_FRAMEWORK.md` | how to write an app, and how the framework runs it |
 
 An app:

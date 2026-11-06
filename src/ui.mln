@@ -151,7 +151,7 @@ export str (TextField f) read() { return runtime.read_text(runtime.part_node((i3
 /** Replaces the text. */
 export void (TextField f) write(str text) { input_set(runtime.part_node((i32)f), text); }
 
-/** Adds to the end of the text. */
+/** Adds to the end of a TextArea's text. */
 export void (TextField f) append(str text) { area_append(runtime.part_node((i32)f), text); }
 
 /** Empties the field. */
@@ -159,6 +159,16 @@ export void (TextField f) clear() { input_set(runtime.part_node((i32)f), ""); }
 
 /** Moves the keyboard to the field. */
 export void (TextField f) focus() { focus(runtime.part_node((i32)f)); }
+
+/** Text the DOM keeps that only grows: a Terminal's output. An app gets one in
+ * `start` and gives it to a TextArea with `log=`. */
+export newtype TextLog = i32;
+
+/** A new log. */
+export TextLog log() { return TextLog(runtime.new_part()); }
+
+/** Adds to the end of the log. */
+export void (TextLog l) append(str text) { area_append(runtime.part_node((i32)l), text); }
 
 // --- focus and windows ------------------------------------------------------------------------
 
