@@ -28,7 +28,7 @@ void wait_for(i32 mask) {
 
 // The syscall reply is an ABI word. runtime.send() converts it to the public
 // RequestStatus enum at this boundary.
-export i32 request(Request *m) {
+export i32 request(borrow mut Request m) {
     // The shared request ring can be briefly full while several applications
     // are mounting. A rejected enqueue has no reply, so retry it instead of
     // entering the reply wait with no request in flight.

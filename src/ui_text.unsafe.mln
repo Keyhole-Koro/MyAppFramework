@@ -1,0 +1,50 @@
+package ui_text;
+
+import runtime from "runtime/runtime.mln";
+import { Text } from "@std/text/text.mln";
+import { Result } from "@std/core/result.mln";
+import { UiError } from "@contracts/ui/widget.contract.mln";
+import { UiOp } from "@contracts/myapp/ui.contract.mln";
+import { Request } from "@contracts/myapp/message.contract.mln";
+
+// The UI calls that fill an app's Text. They hand the OS an address, so they
+// live apart from ui.mln, which is checked. Import them by name:
+//
+//     import { text_copy } from "@app/ui_text.mln";
+//     text_copy<128>(id, &mut n.typed);
+
+export Result<i32, UiError> copy_text(i32 id, char *out, i32 cap) {
+    Result<i32, UiError> result = Err(UiError::NodeNotFound(id));
+    Request request = runtime.ui_request(UiOp::TEXT_COPY);
+    request.a0 = id; request.a1 = (i32)out; request.a2 = cap;
+    runtime.ask_i32(&mut request, &mut result);
+    return result;
+}
+
+export Result<i32, UiError> copy_item(i32 id, i32 index, char *out, i32 cap) {
+    Result<i32, UiError> result = Err(UiError::InvalidIndex(index));
+    Request request = runtime.ui_request(UiOp::LIST_ITEM);
+    request.a0 = id; request.a1 = index; request.a2 = (i32)out; request.a3 = cap;
+    runtime.ask_i32(&mut request, &mut result);
+    return result;
+}
+
+/** Copies a node's text into `out`; a text longer than `out` is cut.
+ * @return Ok(length), or a UI error for an invalid node.
+ */
+@safe
+export Result<i32, UiError> text_copy<const N>(i32 id, borrow mut Text<N> out) {
+    Result<i32, UiError> result = copy_text(id, out.as_ptr(), out.data.length);
+    out.sync_from_ptr();
+    return result;
+}
+
+/** Copies row `index` of a List into `out`.
+ * @return Ok(length), or a UI error for an invalid node or row.
+ */
+@safe
+export Result<i32, UiError> list_item<const N>(i32 id, i32 index, borrow mut Text<N> out) {
+    Result<i32, UiError> result = copy_item(id, index, out.as_ptr(), out.data.length);
+    out.sync_from_ptr();
+    return result;
+}

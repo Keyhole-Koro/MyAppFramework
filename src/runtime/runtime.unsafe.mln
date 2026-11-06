@@ -16,25 +16,29 @@ package runtime;
 //   the app's event loop, on its own task.
 //
 // Handlers are called as fn(self, id, arg) with self = the instance, so
-// a method `void (T *self) tick()` or `void (T *self) save(i32 id)` is
+// a method `void (borrow mut T self) tick()` or `(borrow mut T self) save(i32 id)` is
 // passed as is (the calling convention ignores trailing arguments).
 
 import app_transport from "transport.mln";
 import { Request, RequestDomain, RequestStatus, Event, EventKind } from "@contracts/myapp/message.contract.mln";
 import { UiOp } from "@contracts/myapp/ui.contract.mln";
-import { AppOp, KeyClaimError } from "@contracts/myapp/lifecycle.contract.mln";
+import { AppOp, AppError, KeyClaimError } from "@contracts/myapp/lifecycle.contract.mln";
 import hosted_log from "@std/hosted/log.mln";
 import annotations from "@std/meta/annotations.mln";
 import { Annotations, AnnotationError } from "@std/meta/annotations.mln";
 import { UiError } from "@contracts/ui/widget.contract.mln";
 import { Result } from "@std/core/result.mln";
+import { Option } from "@std/core/option.mln";
 import { CodeAddress } from "@std/core/address.mln";
+import { Text } from "@std/text/text.mln";
+import str from "@std/text/str.mln";
 
 // The instance this process runs (one per process): handlers get it as
 // their receiver. Requests carry it as `owner` too, but the OS replaces
 // that with the pid -- to the server, the owner of everything this process
 // creates is the process -- and events name that pid, not this pointer.
 i32 current_owner = 0;
+Text<64> g_open_path;
 
 i32 annotation_i32(Result<i32, AnnotationError> value) {
     return case value of {
@@ -57,10 +61,12 @@ char* annotation_text(Result<char*, AnnotationError> value) {
     };
 }
 
+@safe
 export i32 owner() { return current_owner; }
 
 // A line on the OS's debug console, for an app's own diagnostics.
-export void log(char *line) {
+@safe
+export void log(str line) {
     hosted_log.write(line);
 }
 
@@ -68,6 +74,7 @@ export void log(char *line) {
 // tree is not useful. Typed element calls expose UiError to ordinary callers;
 // markup uses this terminal policy and ends the process on construction
 // failure instead of inventing node id 0.
+@safe
 export void fail_ui(UiError error) {
     log("UI construction failed");
     app_transport.exit();
@@ -87,6 +94,7 @@ Handler handlers[256];
 i32 handler_count = 0;
 
 // Register fn for (key, kind) on the current instance.
+@safe
 export void on(i32 key, EventKind kind, fn(i32 owner, i32 id, i32 arg) -> void callback) {
     if (callback == 0) { return; }
     i32 i = 0;
@@ -126,6 +134,7 @@ void forget(i32 owner) {
 // --- requests ------------------------------------------------------------------------------
 
 /** Creates a zero-filled UI request with safe empty string payloads. */
+@safe
 export Request ui_request(i32 op) {
     Request request = Request {};
     request.domain = RequestDomain::UI;
@@ -136,6 +145,7 @@ export Request ui_request(i32 op) {
 }
 
 /** Creates a zero-filled application lifecycle request. */
+@safe
 export Request app_request(i32 op) {
     Request request = Request {};
     request.domain = RequestDomain::APP;
@@ -146,16 +156,80 @@ export Request app_request(i32 op) {
 }
 
 /** Sends one fully described request as the current application instance. */
-export RequestStatus send(Request *request) {
-    request->owner = current_owner;
+@safe
+export RequestStatus send(borrow mut Request request) {
+    request.owner = current_owner;
     return app_transport.request(request);
 }
 
-void send_app_value(i32 op, i32 a0, char *s0) {
+/** Attaches the first string argument. The OS copies it during send(). */
+@safe
+export void put_s0(borrow mut Request request, str s) {
+    request.s0 = s.data;
+    request.s0_len = s.length;
+}
+
+/** Attaches the second string argument. The OS copies it during send(). */
+@safe
+export void put_s1(borrow mut Request request, str s) {
+    request.s1 = s.data;
+    request.s1_len = s.length;
+}
+
+// Sends a request whose typed answer the OS copies to `address`.
+void ask(borrow mut Request request, i32 address, i32 size) {
+    request.result_out = address;
+    request.result_size = size;
+    send(request);
+}
+
+/** Sends a request and receives its Result<i32, UiError> answer. */
+@safe
+export void ask_i32(borrow mut Request request, borrow mut Result<i32, UiError> result) {
+    ask(request, (i32)result, sizeof(Result<i32, UiError>));
+}
+
+/** Sends a request and receives its Result<bool, UiError> answer. */
+@safe
+export void ask_bool(borrow mut Request request, borrow mut Result<bool, UiError> result) {
+    ask(request, (i32)result, sizeof(Result<bool, UiError>));
+}
+
+/** Sends a request and receives its Result<Option<i32>, UiError> answer. */
+@safe
+export void ask_option(borrow mut Request request, borrow mut Result<Option<i32>, UiError> result) {
+    ask(request, (i32)result, sizeof(Result<Option<i32>, UiError>));
+}
+
+/** Sends a request and receives its Result<Option<i32>, AppError> answer. */
+@safe
+export void ask_app_option(borrow mut Request request, borrow mut Result<Option<i32>, AppError> result) {
+    ask(request, (i32)result, sizeof(Result<Option<i32>, AppError>));
+}
+
+/** Sends a request and receives its Result<i32, KeyClaimError> answer. */
+@safe
+export void ask_key(borrow mut Request request, borrow mut Result<i32, KeyClaimError> result) {
+    ask(request, (i32)result, sizeof(Result<i32, KeyClaimError>));
+}
+
+/** Sends a request and receives its Result<_, UiError> answer. */
+@safe
+export void ask_unit(borrow mut Request request, borrow mut Result<_, UiError> result) {
+    ask(request, (i32)result, sizeof(Result<_, UiError>));
+}
+
+/** Sends a request and receives its Result<_, AppError> answer. */
+@safe
+export void ask_app_unit(borrow mut Request request, borrow mut Result<_, AppError> result) {
+    ask(request, (i32)result, sizeof(Result<_, AppError>));
+}
+
+void send_app_value(i32 op, i32 a0, str s0) {
     Request request = app_request(op);
     request.a0 = a0;
-    request.s0 = s0;
-    send(&request);
+    put_s0(&mut request, s0);
+    send(&mut request);
 }
 
 // --- lifecycle -----------------------------------------------------------------------------
@@ -179,9 +253,7 @@ export i32 start(i32 self, char *type) {
         Result<i32, UiError> created = Err(UiError::TimerLimit);
         Request request = ui_request(UiOp::CREATE_TIMER);
         request.a0 = annotation_i32(timers.arg(0));
-        request.result_out = (i32)(&created);
-        request.result_size = sizeof(Result<i32, UiError>);
-        send(&request);
+        ask_i32(&mut request, &mut created);
         i32 id = case created of { Ok(value) -> value; Err(e) -> ({ fail_ui(e); 0; }); };
         on(id, EventKind::TIMER,
            (fn(i32 owner, i32 id, i32 arg) -> void)annotation_code(timers.fn()));
@@ -190,10 +262,8 @@ export i32 start(i32 self, char *type) {
     while (keys.next()) {
         Result<i32, KeyClaimError> claimed = Err(KeyClaimError::TableFull);
         Request request = app_request(AppOp::CLAIM_KEY);
-        request.s0 = annotation_text(keys.text(0));
-        request.result_out = (i32)(&claimed);
-        request.result_size = sizeof(Result<i32, KeyClaimError>);
-        send(&request);
+        put_s0(&mut request, str.from_c(annotation_text(keys.text(0))));
+        ask_key(&mut request, &mut claimed);
         case claimed of {
             Ok(token) -> on(token, EventKind::KEY,
                             (fn(i32 owner, i32 id, i32 arg) -> void)annotation_code(keys.fn()));
@@ -222,7 +292,11 @@ void deliver(Event *ev) {
     fn(i32 owner, i32 id, i32 arg) -> void handler = lookup(self, key, ev->kind);
     if (handler != 0) {
         if (ev->kind == EventKind::OPEN) {
-            handler(self, (i32)(&ev->text[0]), 0);
+            // A handler's receiver and argument are lent for the call, so the
+            // path is a `borrow Text<64>` to the app.
+            g_open_path.clear();
+            g_open_path.append(str.from_c(&ev->text[0]));
+            handler(self, (i32)(&g_open_path), 0);
         } else {
             handler(self, ev->id, ev->arg);
         }

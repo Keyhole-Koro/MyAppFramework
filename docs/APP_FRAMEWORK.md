@@ -45,17 +45,17 @@ struct Counter {
 };
 
 @app                                                     // view に付ける = この型はアプリ
-i32 (Counter *c) view() {
-    c->step = 1;                                         // 0 以外の初期値はここで
+i32 (borrow mut Counter c) view() {
+    c.step = 1;                                         // 0 以外の初期値はここで
     return <Window title="Counter" x={96} y={72} w={400} h={272}>
-        <Label ref={c->label} text="clicks: 0" bold={1} testId="counter" />
-        <PrimaryButton text="Click me" w={120} h={36} onClick={c->click} />
+        <Label ref={c.label} text="clicks: 0" bold={1} testId="counter" />
+        <PrimaryButton text="Click me" w={120} h={36} onClick={c.click} />
     </Window>;
 }
 
-void (Counter *c) click(i32 id) {
-    c->clicks = c->clicks + c->step;
-    ui.set_text_fmt(c->label, "clicks: %d", c->clicks, 0);
+void (borrow mut Counter c) click(i32 id) {
+    c.clicks = c.clicks + c.step;
+    ui.set_text_fmt(c.label, "clicks: %d", "", c.clicks);
 }
 ```
 
@@ -69,17 +69,17 @@ void (Counter *c) click(i32 id) {
   ヘッダから `@app` 行を読む。Framework は特定のアプリを知らず、MyOS image にアプリの
   コードをリンクもしない。MyOS リポジトリの `src/apps/` は配布する source package の置き場で、
   MyOS 実装層ではない。
-- **レシーバはポインタか参照** (`Counter *c` / `borrow mut Counter c`)。framework はインスタンスの
+- **レシーバは参照** (`borrow mut Counter c`)。framework はインスタンスの
   アドレスを第一引数に渡すので、値レシーバ（move）は使えない（コンパイルエラー）。
-- **`ref={c->label}`** はそのノードの id をフィールドに書く。木を歩いて id を
+- **`ref={c.label}`** はそのノードの id をフィールドに書く。木を歩いて id を
   取り直すコードは要らない。
-- **テキストはアプリのバッファへ**：`ui.text_copy(id, out, cap)` は
+- **テキストはアプリのバッファへ**：`text_copy<N>(id, &mut out)`（`@app/ui_text.mln`） は
   `Result<i32, UiError>` を返す。サーバの中を指すポインタは返ってこない
   （`char g_buf[...]` をモジュール変数に置く）。
 - **省略できるプロパティ**: `x`/`y`（親原点）、`w`/`h`、`color`、`bold`、
   `gap`、`padding`、`onClick` 等は `elements.mln` のデフォルトが入る。
   `testId="..."` は automation 用の名前。
-- **ハンドラはメソッドを直接渡す** (`onClick={c->click}`)。引数は
+- **ハンドラはメソッドを直接渡す** (`onClick={c.click}`)。引数は
   `()`, `(i32 id)`, `(i32 id, i32 arg)` のどれでもよい。関数ポインタはアプリの外へ出ない：
   `runtime.mln` の表に (ノード id, 種別) → メソッドとして残り、サーバからの CLICK / CHANGE
   イベントで呼ばれる。
@@ -89,7 +89,7 @@ void (Counter *c) click(i32 id) {
 | 属性 | 意味 | 形 |
 | --- | --- | --- |
 | `@app` / `@app(single)` / `@app(name = "...")` | この view を持つ型をアプリに。`single` は 2 回目の起動で既存ウィンドウを前面に | `i32 (T *self) view()` |
-| `@open` | 他アプリの `ui.open(path)` を受ける。`single` なら既存インスタンスへ | `(char *path)` |
+| `@open` | 他アプリの `ui.open(path)` を受ける。`single` なら既存インスタンスへ | `(borrow Text<64> path)` |
 | `@on_close` | ユーザーがウィンドウを閉じた。後始末のあと runtime が EXIT を送り、MyOS が所有物を回収する | `()` / `(i32 id)` |
 | `@timer(ms)` | mount 中、周期的に呼ばれる。インスタンスごとに 1 本 | `()` / `(i32 id)` |
 | `@key("Ctrl+S")` | そのウィンドウがアクティブな間のショートカット | `()` / `(i32 id)` / `(id, arg)` |
@@ -108,7 +108,7 @@ wire 上では **i32 と char\*** を使う。
 `Result` / `Option`をcopy-outする。`Node*`などserver内部のポインタは跨がない。
 この面は既にメッセージ／syscall の client stub として実装されている。
 
-- テキスト: `set_text`, `text_copy(id, out, cap) -> Result<i32, UiError>`,
+- テキスト: `set_text`, `text_copy<N>(id, &mut out) -> Result<i32, UiError>`（`@app/ui_text.mln`）,
   `set_text_fmt(id, "%d / %s", a, b)`
   （ラベルはポインタを保持するので、書式結果はラベルごとのバッファに置かれる）
 - ウィジェット: `is_checked` (`Result<bool, UiError>`), `set_checked`, `input_set`,
@@ -146,7 +146,7 @@ framework が独自 annotation を同じ表に混ぜても、各読み手は要�
 
 - **ハンドラ ABI は 1 種類**: `void handler(i32 owner, i32 id, i32 arg)`。
   `owner` はインスタンスのポインタ。呼び出し規約が余分な引数を無視するので、
-  `onClick={c->click}` も `@timer` のメソッドも**メソッドの実体**をそのまま登録する
+  `onClick={c.click}` も `@timer` のメソッドも**メソッドの実体**をそのまま登録する
   （`(Counter *c, i32 id)` に `owner` と `id` が届く）。トランポリンは無い。
 - **イベント** (`docs/design/ui-protocol.md`): 所有ノードへのクリック・変更・タイマは
   UI domainのevent sinkからservice層を通って`Event`としてプロセスのチャネルに積まれ、

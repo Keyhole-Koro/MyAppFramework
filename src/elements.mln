@@ -30,13 +30,11 @@ import { UiError } from "@contracts/ui/widget.contract.mln";
 // Children of an element are attached with the `append_child` in scope.
 Result<i32, UiError> create(Request request) {
     Result<i32, UiError> result = Err(UiError::UnknownOperation(request.op));
-    request.result_out = (i32)(&result);
-    request.result_size = sizeof(Result<i32, UiError>);
-    runtime.send(&request);
+    runtime.ask_i32(&mut request, &mut result);
     return result;
 }
 
-void register_handler(Result<i32, UiError> *result, EventKind kind,
+void register_handler(borrow Result<i32, UiError> result, EventKind kind,
                       fn(i32 owner, i32 id, i32 arg) -> void callback) {
     case *result of {
         Ok(id) -> ({ runtime.on(id, kind, callback); });
@@ -81,10 +79,10 @@ export Result<_, UiError> append_child(i32 parent, i32 child) {
  * @param testId Stable automation locator id (default none).
  * @return DOM Node ID.
  */
-export Result<i32, UiError> Window(char *title, i32 x = 0, i32 y = 0, i32 w = 400, i32 h = 300, char *testId = "") {
+export Result<i32, UiError> Window(str title, i32 x = 0, i32 y = 0, i32 w = 400, i32 h = 300, str testId = "") {
     Request request = runtime.ui_request(UiOp::CREATE_WINDOW);
     request.a0 = x; request.a1 = y; request.a2 = w; request.a3 = h;
-    request.s0 = title; request.s1 = testId;
+    runtime.put_s0(&mut request, title); runtime.put_s1(&mut request, testId);
     return create(request);
 }
 
@@ -99,10 +97,10 @@ export Result<i32, UiError> Window(char *title, i32 x = 0, i32 y = 0, i32 w = 40
  * @param testId Stable automation locator id (default none).
  * @return DOM Node ID.
  */
-export Result<i32, UiError> Button(char *text, i32 x = 0, i32 y = 0, i32 w = 90, i32 h = 34, fn(i32 owner, i32 id, i32 arg) -> void onClick = 0, char *testId = "") {
+export Result<i32, UiError> Button(str text, i32 x = 0, i32 y = 0, i32 w = 90, i32 h = 34, fn(i32 owner, i32 id, i32 arg) -> void onClick = 0, str testId = "") {
     Request request = runtime.ui_request(UiOp::CREATE_BUTTON);
     request.a0 = x; request.a1 = y; request.a2 = w; request.a3 = h;
-    request.s0 = text; request.s1 = testId;
+    runtime.put_s0(&mut request, text); runtime.put_s1(&mut request, testId);
     Result<i32, UiError> result = create(request);
     register_handler(&result, EventKind::CLICK, onClick);
     return result;
@@ -120,10 +118,10 @@ export Result<i32, UiError> Button(char *text, i32 x = 0, i32 y = 0, i32 w = 90,
  * @param testId Stable automation locator id (default none).
  * @return DOM Node ID.
  */
-export Result<i32, UiError> PrimaryButton(char *text, i32 x = 0, i32 y = 0, i32 w = 90, i32 h = 34, fn(i32 owner, i32 id, i32 arg) -> void onClick = 0, char *testId = "") {
+export Result<i32, UiError> PrimaryButton(str text, i32 x = 0, i32 y = 0, i32 w = 90, i32 h = 34, fn(i32 owner, i32 id, i32 arg) -> void onClick = 0, str testId = "") {
     Request request = runtime.ui_request(UiOp::CREATE_PRIMARY_BUTTON);
     request.a0 = x; request.a1 = y; request.a2 = w; request.a3 = h;
-    request.s0 = text; request.s1 = testId;
+    runtime.put_s0(&mut request, text); runtime.put_s1(&mut request, testId);
     Result<i32, UiError> result = create(request);
     register_handler(&result, EventKind::CLICK, onClick);
     return result;
@@ -137,10 +135,10 @@ export Result<i32, UiError> PrimaryButton(char *text, i32 x = 0, i32 y = 0, i32 
  * @param testId Stable automation locator id (default none).
  * @return DOM Node ID.
  */
-export Result<i32, UiError> Text(char *text, i32 x = 0, i32 y = 0, char *testId = "") {
+export Result<i32, UiError> Text(str text, i32 x = 0, i32 y = 0, str testId = "") {
     Request request = runtime.ui_request(UiOp::CREATE_TEXT);
     request.a0 = x; request.a1 = y;
-    request.s0 = text; request.s1 = testId;
+    runtime.put_s0(&mut request, text); runtime.put_s1(&mut request, testId);
     return create(request);
 }
 
@@ -155,10 +153,10 @@ export Result<i32, UiError> Text(char *text, i32 x = 0, i32 y = 0, char *testId 
  * @param testId Stable automation locator id (default none).
  * @return DOM Node ID.
  */
-export Result<i32, UiError> Label(char *text, i32 x = 0, i32 y = 0, i32 color = 0, i32 bold = 0, char *testId = "") {
+export Result<i32, UiError> Label(str text, i32 x = 0, i32 y = 0, i32 color = 0, i32 bold = 0, str testId = "") {
     Request request = runtime.ui_request(UiOp::CREATE_LABEL);
     request.a0 = x; request.a1 = y; request.a2 = color; request.a3 = bold;
-    request.s0 = text; request.s1 = testId;
+    runtime.put_s0(&mut request, text); runtime.put_s1(&mut request, testId);
     return create(request);
 }
 
@@ -243,10 +241,10 @@ export Result<i32, UiError> Row(i32 x = 0, i32 y = 0, i32 w = 100, i32 h = 34,
  * @param testId Stable automation locator id (default none).
  * @return DOM Node ID.
  */
-export Result<i32, UiError> TextInput(char *placeholder, i32 x = 0, i32 y = 0, i32 w = 200, i32 h = 34, i32 capacity = 64, fn(i32 owner, i32 id, i32 arg) -> void onChange = 0, char *testId = "") {
+export Result<i32, UiError> TextInput(str placeholder, i32 x = 0, i32 y = 0, i32 w = 200, i32 h = 34, i32 capacity = 64, fn(i32 owner, i32 id, i32 arg) -> void onChange = 0, str testId = "") {
     Request request = runtime.ui_request(UiOp::CREATE_TEXT_INPUT);
     request.a0 = x; request.a1 = y; request.a2 = w; request.a3 = h; request.a4 = capacity;
-    request.s0 = placeholder; request.s1 = testId;
+    runtime.put_s0(&mut request, placeholder); runtime.put_s1(&mut request, testId);
     Result<i32, UiError> result = create(request);
     register_handler(&result, EventKind::CHANGE, onChange);
     return result;
@@ -262,10 +260,10 @@ export Result<i32, UiError> TextInput(char *placeholder, i32 x = 0, i32 y = 0, i
  * @param testId Stable automation locator id (default none).
  * @return DOM Node ID.
  */
-export Result<i32, UiError> Checkbox(char *text, i32 x = 0, i32 y = 0, i32 checked = 0, fn(i32 owner, i32 id, i32 arg) -> void onClick = 0, char *testId = "") {
+export Result<i32, UiError> Checkbox(str text, i32 x = 0, i32 y = 0, i32 checked = 0, fn(i32 owner, i32 id, i32 arg) -> void onClick = 0, str testId = "") {
     Request request = runtime.ui_request(UiOp::CREATE_CHECKBOX);
     request.a0 = x; request.a1 = y; request.a2 = checked;
-    request.s0 = text; request.s1 = testId;
+    runtime.put_s0(&mut request, text); runtime.put_s1(&mut request, testId);
     Result<i32, UiError> result = create(request);
     register_handler(&result, EventKind::CLICK, onClick);
     return result;
@@ -311,11 +309,11 @@ export Result<i32, UiError> Timer(i32 interval, fn(i32 owner, i32 id, i32 arg) -
  * @param testId Stable automation locator id (default none).
  * @return DOM Node ID.
  */
-export Result<i32, UiError> TextArea(char *name, i32 x = 0, i32 y = 0, i32 w = 300, i32 h = 200, i32 capacity = 1024, i32 readonly = 0, fn(i32 owner, i32 id, i32 arg) -> void onChange = 0, char *testId = "") {
+export Result<i32, UiError> TextArea(str name, i32 x = 0, i32 y = 0, i32 w = 300, i32 h = 200, i32 capacity = 1024, i32 readonly = 0, fn(i32 owner, i32 id, i32 arg) -> void onChange = 0, str testId = "") {
     Request request = runtime.ui_request(UiOp::CREATE_TEXT_AREA);
     request.a0 = x; request.a1 = y; request.a2 = w; request.a3 = h;
     request.a4 = capacity; request.a5 = readonly;
-    request.s0 = name; request.s1 = testId;
+    runtime.put_s0(&mut request, name); runtime.put_s1(&mut request, testId);
     Result<i32, UiError> result = create(request);
     register_handler(&result, EventKind::CHANGE, onChange);
     return result;
@@ -336,10 +334,10 @@ export Result<i32, UiError> TextArea(char *name, i32 x = 0, i32 y = 0, i32 w = 3
  * @param testId Stable automation locator id (default none).
  * @return DOM Node ID.
  */
-export Result<i32, UiError> List(char *name, i32 x = 0, i32 y = 0, i32 w = 300, i32 h = 200, i32 capacity = 1024, fn(i32 owner, i32 id, i32 arg) -> void onChange = 0, fn(i32 owner, i32 id, i32 arg) -> void onActivate = 0, char *testId = "") {
+export Result<i32, UiError> List(str name, i32 x = 0, i32 y = 0, i32 w = 300, i32 h = 200, i32 capacity = 1024, fn(i32 owner, i32 id, i32 arg) -> void onChange = 0, fn(i32 owner, i32 id, i32 arg) -> void onActivate = 0, str testId = "") {
     Request request = runtime.ui_request(UiOp::CREATE_LIST);
     request.a0 = x; request.a1 = y; request.a2 = w; request.a3 = h; request.a4 = capacity;
-    request.s0 = name; request.s1 = testId;
+    runtime.put_s0(&mut request, name); runtime.put_s1(&mut request, testId);
     Result<i32, UiError> result = create(request);
     register_handler(&result, EventKind::CHANGE, onChange);
     register_handler(&result, EventKind::ACTIVATE, onActivate);
@@ -351,18 +349,18 @@ export Result<i32, UiError> List(char *name, i32 x = 0, i32 y = 0, i32 w = 300, 
 // instead of leaving a partial tree. These adapters preserve UiError all the
 // way to that terminal policy; they do not translate it to a sentinel.
 export void dom_append_child(i32 parent, i32 child) { unwrap_append(append_child(parent, child)); }
-export i32 dom_Window(char *title, i32 x, i32 y, i32 w, i32 h, char *testId) { return unwrap_node(Window(title, x, y, w, h, testId)); }
-export i32 dom_Button(char *text, i32 x, i32 y, i32 w, i32 h, fn(i32 owner, i32 id, i32 arg) -> void onClick, char *testId) { return unwrap_node(Button(text, x, y, w, h, onClick, testId)); }
-export i32 dom_PrimaryButton(char *text, i32 x, i32 y, i32 w, i32 h, fn(i32 owner, i32 id, i32 arg) -> void onClick, char *testId) { return unwrap_node(PrimaryButton(text, x, y, w, h, onClick, testId)); }
-export i32 dom_Text(char *text, i32 x, i32 y, char *testId) { return unwrap_node(Text(text, x, y, testId)); }
-export i32 dom_Label(char *text, i32 x, i32 y, i32 color, i32 bold, char *testId) { return unwrap_node(Label(text, x, y, color, bold, testId)); }
+export i32 dom_Window(str title, i32 x, i32 y, i32 w, i32 h, str testId) { return unwrap_node(Window(title, x, y, w, h, testId)); }
+export i32 dom_Button(str text, i32 x, i32 y, i32 w, i32 h, fn(i32 owner, i32 id, i32 arg) -> void onClick, str testId) { return unwrap_node(Button(text, x, y, w, h, onClick, testId)); }
+export i32 dom_PrimaryButton(str text, i32 x, i32 y, i32 w, i32 h, fn(i32 owner, i32 id, i32 arg) -> void onClick, str testId) { return unwrap_node(PrimaryButton(text, x, y, w, h, onClick, testId)); }
+export i32 dom_Text(str text, i32 x, i32 y, str testId) { return unwrap_node(Text(text, x, y, testId)); }
+export i32 dom_Label(str text, i32 x, i32 y, i32 color, i32 bold, str testId) { return unwrap_node(Label(text, x, y, color, bold, testId)); }
 export i32 dom_Box(i32 x, i32 y, i32 w, i32 h, i32 background, i32 border) { return unwrap_node(Box(x, y, w, h, background, border)); }
 export i32 dom_Panel(i32 x, i32 y, i32 w, i32 h, i32 radius) { return unwrap_node(Panel(x, y, w, h, radius)); }
 export i32 dom_Column(i32 x, i32 y, i32 w, i32 h, i32 padding, i32 gap) { return unwrap_node(Column(x, y, w, h, padding, gap)); }
 export i32 dom_Row(i32 x, i32 y, i32 w, i32 h, i32 padding, i32 gap) { return unwrap_node(Row(x, y, w, h, padding, gap)); }
-export i32 dom_TextInput(char *placeholder, i32 x, i32 y, i32 w, i32 h, i32 capacity, fn(i32 owner, i32 id, i32 arg) -> void onChange, char *testId) { return unwrap_node(TextInput(placeholder, x, y, w, h, capacity, onChange, testId)); }
-export i32 dom_Checkbox(char *text, i32 x, i32 y, i32 checked, fn(i32 owner, i32 id, i32 arg) -> void onClick, char *testId) { return unwrap_node(Checkbox(text, x, y, checked, onClick, testId)); }
+export i32 dom_TextInput(str placeholder, i32 x, i32 y, i32 w, i32 h, i32 capacity, fn(i32 owner, i32 id, i32 arg) -> void onChange, str testId) { return unwrap_node(TextInput(placeholder, x, y, w, h, capacity, onChange, testId)); }
+export i32 dom_Checkbox(str text, i32 x, i32 y, i32 checked, fn(i32 owner, i32 id, i32 arg) -> void onClick, str testId) { return unwrap_node(Checkbox(text, x, y, checked, onClick, testId)); }
 export i32 dom_Separator(i32 x, i32 y, i32 w) { return unwrap_node(Separator(x, y, w)); }
 export i32 dom_Timer(i32 interval, fn(i32 owner, i32 id, i32 arg) -> void onTick) { return unwrap_node(Timer(interval, onTick)); }
-export i32 dom_TextArea(char *name, i32 x, i32 y, i32 w, i32 h, i32 capacity, i32 readonly, fn(i32 owner, i32 id, i32 arg) -> void onChange, char *testId) { return unwrap_node(TextArea(name, x, y, w, h, capacity, readonly, onChange, testId)); }
-export i32 dom_List(char *name, i32 x, i32 y, i32 w, i32 h, i32 capacity, fn(i32 owner, i32 id, i32 arg) -> void onChange, fn(i32 owner, i32 id, i32 arg) -> void onActivate, char *testId) { return unwrap_node(List(name, x, y, w, h, capacity, onChange, onActivate, testId)); }
+export i32 dom_TextArea(str name, i32 x, i32 y, i32 w, i32 h, i32 capacity, i32 readonly, fn(i32 owner, i32 id, i32 arg) -> void onChange, str testId) { return unwrap_node(TextArea(name, x, y, w, h, capacity, readonly, onChange, testId)); }
+export i32 dom_List(str name, i32 x, i32 y, i32 w, i32 h, i32 capacity, fn(i32 owner, i32 id, i32 arg) -> void onChange, fn(i32 owner, i32 id, i32 arg) -> void onActivate, str testId) { return unwrap_node(List(name, x, y, w, h, capacity, onChange, onActivate, testId)); }
