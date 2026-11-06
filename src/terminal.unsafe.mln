@@ -15,11 +15,9 @@ import { ProcSpawnArgs, ProcBindArgs, ProcUnbindArgs } from "@contracts/myos/pro
 // ours): bound before it runs, so its first output cannot slip past.
 @safe
 export Result<i32, SpawnError> spawn_bound(str path, i32 node) {
-    Text<128> c = Text<128> {};
-    c.append(path);
     Result<i32, SpawnError> result;
     ProcSpawnArgs<Result<i32, SpawnError>> args = ProcSpawnArgs<Result<i32, SpawnError>> {
-        path: c.as_ptr(), stdout_node: node, result_out: &result
+        path: path.data, path_length: path.length, stdout_node: node, result_out: &result
     };
     myos_service.call(OsService::PROC_SPAWN, (i32)(&args));
     return result;

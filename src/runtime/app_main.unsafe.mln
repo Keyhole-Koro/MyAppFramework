@@ -35,8 +35,8 @@ export i32 main() {
     char *p = (char*)self;
     i32 i = 0;
     while (i < size) { p[i] = (char)0; i++; }
-    Result<char*, AnnotationError> type_result = rows.type();
-    char *type = case type_result of {
+    Result<str, AnnotationError> type_result = rows.type();
+    str type = case type_result of {
         Ok(value) -> value;
         Err(_) -> ({ return 1; });
     };

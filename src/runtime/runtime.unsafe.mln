@@ -54,7 +54,7 @@ CodeAddress annotation_code(Result<CodeAddress, AnnotationError> value) {
     };
 }
 
-char* annotation_text(Result<char*, AnnotationError> value) {
+str annotation_text(Result<str, AnnotationError> value) {
     return case value of {
         Ok(v) -> v;
         Err(_) -> "";
@@ -239,7 +239,7 @@ void send_app_value(i32 op, i32 a0, str s0) {
 // shortcuts and remember its @open / @on_close methods. The annotation
 // rows are read here, in the app, so the OS needs to know nothing about
 // those annotations but @app itself.
-export i32 start(i32 self, char *type) {
+export i32 start(i32 self, str type) {
     current_owner = self;   // for the rest of the process's life
     i32 win = 0;
     Annotations app = annotations.where("app", type);
@@ -262,7 +262,7 @@ export i32 start(i32 self, char *type) {
     while (keys.next()) {
         Result<i32, KeyClaimError> claimed = Err(KeyClaimError::TableFull);
         Request request = app_request(AppOp::CLAIM_KEY);
-        put_s0(&request, str.from_c(annotation_text(keys.text(0))));
+        put_s0(&request, annotation_text(keys.text(0)));
         ask_key(&request, &claimed);
         case claimed of {
             Ok(token) -> on(token, EventKind::KEY,
