@@ -5,6 +5,8 @@ import { UiOp } from "@contracts/myapp/ui.contract.mln";
 import { Request, EventKind } from "@contracts/myapp/message.contract.mln";
 import { Result } from "@std/core/result.mln";
 import { NodeId, UiError } from "@contracts/ui/widget.contract.mln";
+import ui from "ui.mln";
+import { TextField } from "ui.mln";
 import { Text } from "@std/text/text.mln";
 import { Option } from "@std/core/option.mln";
 import str from "@std/text/str.mln";
@@ -233,23 +235,32 @@ export Result<NodeId, UiError> Row(i32 x = 0, i32 y = 0, i32 w = 100, i32 h = 34
 }
 
 /**
- * Lowers JSX `<TextInput placeholder="..." x={...} y={...} w={...} h={...} capacity={...} onChange={...} testId="..." />`.
+ * Lowers JSX `<TextInput placeholder="..." field={...} x={...} y={...} w={...} h={...} capacity={...} focus={...} onChange={...} testId="..." />`.
  * @param placeholder Placeholder text string.
+ * @param field The part that reads and writes the text (default none).
  * @param x Logical X coordinate (default 0).
  * @param y Logical Y coordinate (default 0).
  * @param w Logical width (default 200).
  * @param h Logical height (default 34).
  * @param capacity Buffer capacity in bytes (default 64).
- * @param onChange Text change callback function pointer (default none).
+ * @param focus Whether the keyboard starts here (default false).
+ * @param onChange Called with the text when the user changes it (default none).
  * @param testId Stable automation locator id (default none).
  * @return DOM Node ID.
  */
-export Result<NodeId, UiError> TextInput(str placeholder, i32 x = 0, i32 y = 0, i32 w = 200, i32 h = 34, i32 capacity = 64, fn(i32 owner, NodeId id, i32 arg) -> void onChange = 0, str testId = "") {
+export Result<NodeId, UiError> TextInput(str placeholder, TextField field = 0, i32 x = 0, i32 y = 0, i32 w = 200, i32 h = 34, i32 capacity = 64, bool focus = false, fn(i32 owner, str text) -> void onChange = 0, str testId = "") {
     Request request = runtime.ui_request(UiOp::CREATE_TEXT_INPUT);
     request.a0 = x; request.a1 = y; request.a2 = w; request.a3 = h; request.a4 = capacity;
     runtime.put_s0(&request, placeholder); runtime.put_s1(&request, testId);
     Result<NodeId, UiError> result = create(request);
-    register_handler(result, EventKind::CHANGE, onChange);
+    case result of {
+        Ok(id) -> ({
+            runtime.attach((i32)field, id);
+            runtime.on_text((i32)id, EventKind::CHANGE, onChange);
+            if (focus) { ui.focus(id); }
+        });
+        Err(_) -> _;
+    };
     return result;
 }
 
@@ -364,7 +375,7 @@ export NodeId dom_Box(i32 x, i32 y, i32 w, i32 h, i32 background, i32 border) { 
 export NodeId dom_Panel(i32 x, i32 y, i32 w, i32 h, i32 radius) { return unwrap_node(Panel(x, y, w, h, radius)); }
 export NodeId dom_Column(i32 x, i32 y, i32 w, i32 h, i32 padding, i32 gap) { return unwrap_node(Column(x, y, w, h, padding, gap)); }
 export NodeId dom_Row(i32 x, i32 y, i32 w, i32 h, i32 padding, i32 gap) { return unwrap_node(Row(x, y, w, h, padding, gap)); }
-export NodeId dom_TextInput(str placeholder, i32 x, i32 y, i32 w, i32 h, i32 capacity, fn(i32 owner, NodeId id, i32 arg) -> void onChange, str testId) { return unwrap_node(TextInput(placeholder, x, y, w, h, capacity, onChange, testId)); }
+export NodeId dom_TextInput(str placeholder, TextField field, i32 x, i32 y, i32 w, i32 h, i32 capacity, bool focus, fn(i32 owner, str text) -> void onChange, str testId) { return unwrap_node(TextInput(placeholder, field, x, y, w, h, capacity, focus, onChange, testId)); }
 export NodeId dom_Checkbox(str text, i32 x, i32 y, bool checked, fn(i32 owner, bool on) -> void onChange, str testId) { return unwrap_node(Checkbox(text, x, y, checked, onChange, testId)); }
 export NodeId dom_Separator(i32 x, i32 y, i32 w) { return unwrap_node(Separator(x, y, w)); }
 export NodeId dom_Timer(i32 interval, fn(i32 owner, NodeId id, i32 arg) -> void onTick) { return unwrap_node(Timer(interval, onTick)); }
@@ -431,6 +442,11 @@ export str format(str text) {
 export str format_int(str left, i32 value) {
     Text<12> decimal = value.to_string();
     g_format.append(decimal.as_str());
+    return format_literal(left);
+}
+
+export str format_str(str left, str value) {
+    g_format.append(value);
     return format_literal(left);
 }
 

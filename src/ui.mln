@@ -136,6 +136,30 @@ export Result<Option<i32>, UiError> list_selected(NodeId id) {
 }
 
 
+// --- parts ------------------------------------------------------------------------------------
+
+/** Text the DOM keeps: what is being typed, or an Editor's body. An app gets
+ * one in `start` and gives it to an element with `field=`. */
+export newtype TextField = i32;
+
+/** A new field. */
+export TextField field() { return TextField(runtime.new_part()); }
+
+/** The text, valid until the next read. */
+export str (TextField f) read() { return runtime.read_text(runtime.part_node((i32)f)); }
+
+/** Replaces the text. */
+export void (TextField f) write(str text) { input_set(runtime.part_node((i32)f), text); }
+
+/** Adds to the end of the text. */
+export void (TextField f) append(str text) { area_append(runtime.part_node((i32)f), text); }
+
+/** Empties the field. */
+export void (TextField f) clear() { input_set(runtime.part_node((i32)f), ""); }
+
+/** Moves the keyboard to the field. */
+export void (TextField f) focus() { focus(runtime.part_node((i32)f)); }
+
 // --- focus and windows ------------------------------------------------------------------------
 
 export void focus(NodeId id) {

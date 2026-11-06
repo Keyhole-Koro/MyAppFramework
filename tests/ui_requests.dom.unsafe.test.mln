@@ -1,8 +1,11 @@
 import assert from "@std/testing/assert.mln";
 import mock from "../../../toolchain/MyLangTestKit/runtime/facade.mln";
 import ui from "@app/ui.mln";
+import { TextField } from "@app/ui.mln";
 import elements from "@app/elements.mln";
 import app_transport from "@app/runtime/transport.mln";
+import app_allocator from "@app/runtime/allocator.mln";
+import runtime from "@app/runtime/runtime.mln";
 import terminal from "@app/terminal.mln";
 import myos_service from "@std/platform/myos/service.mln";
 import { UiOp } from "@contracts/myapp/ui.contract.mln";
@@ -11,6 +14,7 @@ import { NodeId, UiError } from "@contracts/ui/widget.contract.mln";
 import { OsService } from "@contracts/myos/services.contract.mln";
 import { ProcBindArgs } from "@contracts/myos/process-args.contract.mln";
 import { SyscallFailure } from "@contracts/myos/syscall.contract.mln";
+import { AllocationError } from "@std/memory/allocator.mln";
 import { Result } from "@std/core/result.mln";
 
 // What the SDK's calls put on the wire. The transport is faked, so every call
@@ -45,6 +49,16 @@ Result<i32, SyscallFailure> recording_service(i32 service, i32 args) {
     return Ok(0);
 }
 
+// The heap needs the OS, so what the SDK allocates comes from here.
+char g_heap[8192];
+i32 g_heap_used = 0;
+
+Result<i32, AllocationError> test_alloc(i32 size) {
+    i32 at = (i32)(&g_heap[g_heap_used]);
+    g_heap_used = g_heap_used + size;
+    return Ok(at);
+}
+
 void no_tick(i32 owner, NodeId id, i32 arg) { }
 
 void expect_request(i32 count, i32 op, i32 a0, str what) {
@@ -69,6 +83,28 @@ void widget_calls_name_their_operation_and_node() {
     ui.test_id(NodeId(9), "name");
     expect_request(5, UiOp::TEST_ID, 9, "test_id");
     assert.assert_true(g_last.s0_len == 4, "test_id carries the name");
+}
+
+/*@Test "a field names its operation and node" { step: 5000000; }*/
+void a_field_names_its_operation_and_node() {
+    mock.of(app_transport.request).when(mock.any()).call(recording_request);
+    mock.of(app_allocator.alloc).when(mock.any()).call(test_alloc);
+    g_requests = 0;
+    TextField field = ui.field();
+    runtime.attach((i32)field, NodeId(5));
+    field.write("abc");
+    expect_request(1, UiOp::INPUT_SET, 5, "write");
+    assert.assert_true(g_last.s0_len == 3, "write carries the text");
+    field.clear();
+    expect_request(2, UiOp::INPUT_SET, 5, "clear");
+    assert.assert_true(g_last.s0_len == 0, "clear writes nothing");
+    field.append("d");
+    expect_request(3, UiOp::AREA_APPEND, 5, "append");
+    field.focus();
+    expect_request(4, UiOp::FOCUS, 5, "focus");
+    field.read();
+    expect_request(5, UiOp::TEXT_COPY, 5, "read");
+    assert.assert_true(g_last.result_out != 0, "read asks for an answer");
 }
 
 /*@Test "elements are one create request" { step: 5000000; }*/

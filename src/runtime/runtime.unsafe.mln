@@ -88,6 +88,7 @@ i32 HANDLERS_MAX = 256;
 enum HandlerShape {
     WORDS,  // (NodeId id, i32 arg)
     FLAG,   // (bool on)
+    TEXT,   // (str text), read from the node
 }
 
 struct Handler {
@@ -110,6 +111,12 @@ export void on(i32 key, EventKind kind, fn(i32 owner, NodeId id, i32 arg) -> voi
 @safe
 export void on_flag(i32 key, EventKind kind, fn(i32 owner, bool on) -> void callback) {
     add_handler(key, kind, HandlerShape::FLAG, (fn(i32 owner, NodeId id, i32 arg) -> void)callback);
+}
+
+/** Registers a handler of a change that carries the node's text. */
+@safe
+export void on_text(i32 key, EventKind kind, fn(i32 owner, str text) -> void callback) {
+    add_handler(key, kind, HandlerShape::TEXT, (fn(i32 owner, NodeId id, i32 arg) -> void)callback);
 }
 
 void add_handler(i32 key, EventKind kind, HandlerShape shape, fn(i32 owner, NodeId id, i32 arg) -> void callback) {
@@ -153,6 +160,11 @@ void call_handler(i32 row, Event *ev) {
     if (handlers[row].shape == HandlerShape::FLAG) {
         fn(i32 owner, bool on) -> void flag = (fn(i32 owner, bool on) -> void)callback;
         flag(current_owner, ev->arg != 0);
+        return;
+    }
+    if (handlers[row].shape == HandlerShape::TEXT) {
+        fn(i32 owner, str text) -> void changed = (fn(i32 owner, str text) -> void)callback;
+        changed(current_owner, read_text(NodeId(ev->id)));
         return;
     }
     callback(current_owner, NodeId(ev->id), ev->arg);
@@ -343,6 +355,60 @@ export bool text_changed(i32 slot, str value) {
     }
     bindings[slot].length = value.length;
     return !first;
+}
+
+// --- parts -------------------------------------------------------------------------------------
+
+// A part is what an app holds of a value the DOM keeps: a number it gets in
+// `start`, because `view` cannot write to the state. `view` hands the number to
+// an element, which is how it comes to name a node. Zero is no part.
+i32 PARTS_MAX = 16;
+i32 parts[16];
+i32 part_count = 0;
+
+/** A new part's number. */
+@safe
+export i32 new_part() {
+    if (part_count + 1 >= PARTS_MAX) {
+        log("Too many parts");
+        app_transport.exit();
+    }
+    part_count++;
+    return part_count;
+}
+
+/** Makes a part name a node. */
+@safe
+export void attach(i32 part, NodeId node) {
+    if (part != 0) { parts[part] = (i32)node; }
+}
+
+/** The node of a part. */
+@safe
+export NodeId part_node(i32 part) { return NodeId(parts[part]); }
+
+// A read's text. The largest is an Editor's body, and few apps read that much,
+// so it comes from the heap on the first read.
+i32 READ_MAX = 4096;
+char *g_read = (char*)0;
+
+/** A node's text, valid until the next read. */
+@safe
+export str read_text(NodeId id) {
+    if (g_read == 0) {
+        g_read = case app_allocator.alloc(READ_MAX) of {
+            Ok(pointer) -> (char*)pointer;
+            Err(_) -> ({ log("Out of memory for a text"); app_transport.exit(); (char*)0; });
+        };
+    }
+    Result<i32, UiError> result = Err(UiError::NodeNotFound(id));
+    Request request = ui_request(UiOp::TEXT_COPY);
+    request.a0 = (i32)id;
+    request.a1 = (i32)g_read;
+    request.a2 = READ_MAX;
+    ask_i32(&request, &result);
+    i32 length = case result of { Ok(value) -> value; Err(_) -> 0; };
+    return str { data: g_read, length: length };
 }
 
 // --- lifecycle -----------------------------------------------------------------------------
