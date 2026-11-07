@@ -2,7 +2,6 @@ package ui;
 
 import runtime from "runtime/runtime.mln";
 import str from "@std/text/str.mln";
-import { Text } from "@std/text/text.mln";
 import ascii from "@std/text/ascii.mln";
 import { Option } from "@std/core/option.mln";
 import { Result } from "@std/core/result.mln";
@@ -23,62 +22,6 @@ import { Request } from "@contracts/myapp/message.contract.mln";
 // Arguments on the wire are words and copied buffers. Semantic return values
 // use Result / Option where absence and failure differ; the gateway copies
 // those data-only contract values back without exposing a server pointer.
-
-// --- text -------------------------------------------------------------------------------------
-
-export void set_text(NodeId id, str s) {
-    Request request = runtime.ui_request(UiOp::SET_TEXT);
-    request.a0 = (i32)id;
-    runtime.put_s0(&request, s);
-    runtime.send(&request);
-}
-
-/** Shows a failure as `what: <message>` (`delete failed: disk full`).
- * @param id Node whose text is set, typically a status line.
- * @param what What failed.
- * @param message Why, typically an error's `describe()`.
- */
-export void set_error(NodeId id, str what, str message) {
-    Text<96> line = Text<96> {};
-    line.clear();
-    line.append(what);
-    line.append(": ");
-    line.append(message);
-    set_text(id, line.as_str());
-}
-
-// set_text with a format: `%s` is `s`, `%d` is `n`, `%%` is a percent sign.
-// (The server keeps its own copy of every text it is given, so the app's
-// buffers are its own business.)
-Text<256> g_fmt_buf;
-export void set_text_fmt(NodeId id, str fmt, str s, i32 n) {
-    g_fmt_buf.clear();
-    i32 i = 0;
-    while (i < fmt.length) {
-        i32 c = byte(fmt, i);
-        i32 spec = byte(fmt, i + 1);
-        if (c == '%' && spec == 'd') {
-            Text<12> decimal = n.to_string();
-            g_fmt_buf.append(decimal.as_str());
-            i = i + 2;
-        } else if (c == '%' && spec == 's') {
-            g_fmt_buf.append(s);
-            i = i + 2;
-        } else if (c == '%' && spec == '%') {
-            g_fmt_buf.push((u8)'%');
-            i = i + 2;
-        } else {
-            g_fmt_buf.push((u8)c);
-            i++;
-        }
-    }
-    set_text(id, g_fmt_buf.as_str());
-}
-
-// The byte at `index`, or zero past the end.
-i32 byte(str s, i32 index) {
-    return s.byte(index);
-}
 
 // --- widgets --------------------------------------------------------------------------------
 

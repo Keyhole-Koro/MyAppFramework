@@ -34,29 +34,33 @@ reap はシェル（`MyOS/src/shell/app.mln`）の責務。
 ```mylang
 package counter;
 
-import elements from "../../../MyAppFramework/src/elements.mln";        // markup の要素語彙
-import ui from "../../../MyAppFramework/src/ui.mln";                    // アプリが呼べる UI API
-import { app } from "../../../MyAppFramework/src/annotations.mln";      // 使うアノテーション
+import app from "@app/app.mln";                  // app.run と App
+import { App, View } from "@app/app.mln";
+import elements from "@app/elements.mln";        // markup の要素語彙
+import { app } from "@app/annotations.mln";      // 使うアノテーション
 
+@app                                             // struct に付ける = この型はアプリ
 struct Counter {
-    i32 clicks;          // インスタンスの状態。mount 時にゼロ埋めされる
+    i32 clicks;          // インスタンスの状態
     i32 step;
-    NodeId label;        // ref= で受け取るノード id
 };
 
-@app                                                     // view に付ける = この型はアプリ
-NodeId (borrow Counter c) view() {
-    c.step = 1;                                         // 0 以外の初期値はここで
-    return <Window title="Counter" x={96} y={72} w={400} h={272}>
-        <Label ref={c.label} text="clicks: 0" bold={1} testId="counter" />
-        <PrimaryButton text="Click me" w={120} h={36} onClick={c.click} />
-    </Window>;
+impl App for Counter {
+    Self start() { return Counter { step: 1 }; } // 初期値はここで
+
+    View (Self c) view() {
+        return <Window title="Counter" x={96} y={72} w={400} h={272}>
+            <Label text={"clicks: %d", c.clicks} bold={1} testId="counter" />
+            <PrimaryButton text="Click me" w={120} h={36} onClick={c.click} />
+        </Window>;
+    }
 }
 
-void (borrow Counter c) click(NodeId id) {
+void (borrow Counter c) click() {
     c.clicks = c.clicks + c.step;
-    ui.set_text_fmt(c.label, "clicks: %d", "", c.clicks);
 }
+
+i32 main() { return app.run<Counter>(); }
 ```
 
 - **アノテーションは import する宣言。** `@app` / `@timer` / `@key` / `@open` /
@@ -73,9 +77,8 @@ void (borrow Counter c) click(NodeId id) {
   アドレスを第一引数に渡すので、値レシーバ（move）は使えない（コンパイルエラー）。
 - **`ref={c.label}`** はそのノードの id をフィールドに書く。木を歩いて id を
   取り直すコードは要らない。
-- **テキストはアプリのバッファへ**：`text_copy<N>(id, &out)`（`@app/ui_text.mln`） は
-  `Result<i32, UiError>` を返す。サーバの中を指すポインタは返ってこない
-  （`char g_buf[...]` をモジュール変数に置く）。
+- **DOM が持つテキストは部品で読む**：`TextField` の `read()` は次の `read` まで有効な `str` を
+  返す。サーバの中を指すポインタは返ってこない。
 - **省略できるプロパティ**: `x`/`y`（親原点）、`w`/`h`、`color`、`bold`、
   `gap`、`padding`、`onClick` 等は `elements.mln` のデフォルトが入る。
   `testId="..."` は automation 用の名前。
@@ -108,9 +111,8 @@ wire 上では **i32 と char\*** を使う。
 `Result` / `Option`をcopy-outする。`Node*`などserver内部のポインタは跨がない。
 この面は既にメッセージ／syscall の client stub として実装されている。
 
-- テキスト: `set_text`, `text_copy<N>(id, &out) -> Result<i32, UiError>`（`@app/ui_text.mln`）,
-  `set_text_fmt(id, "%d / %s", a, b)`
-  （ラベルはポインタを保持するので、書式結果はラベルごとのバッファに置かれる）
+- テキスト: `TextField`（`read`, `write`, `append`, `clear`, `focus`）, `TextLog`（`append`）。
+  ラベルの文字は `text={...}` の属性が状態から更新する
 - ウィジェット: `is_checked` (`Result<bool, UiError>`), `set_checked`, `input_set`,
   `area_append`, `area_clear`, `area_lines` / `list_count` (`Result<i32, UiError>`),
   `list_set_items`, `list_selected` (`Result<Option<i32>, UiError>`),

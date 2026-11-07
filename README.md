@@ -40,28 +40,32 @@ layer; shared service identifiers and filesystem semantics live under
 An app:
 
 ```mylang
-import elements from "../../../MyAppFramework/src/elements.mln";
-import ui from "../../../MyAppFramework/src/ui.mln";
-import { app, timer } from "../../../MyAppFramework/src/annotations.mln";
-
-struct Counter { i32 clicks; NodeId label; };
+import app from "@app/app.mln";
+import { App, View } from "@app/app.mln";
+import elements from "@app/elements.mln";
+import { app } from "@app/annotations.mln";
 
 @app
-NodeId (borrow Counter c) view() {
-    return <Window title="Counter" w={400} h={272}>
-        <Label ref={c.label} text="clicks: 0" bold={1} />
-        <PrimaryButton text="Click me" w={120} h={36} onClick={c.click} />
-    </Window>;
+struct Counter { i32 clicks; };
+
+impl App for Counter {
+    Self start() { return Counter {}; }
+
+    View (Self c) view() {
+        return <Window title="Counter" w={400} h={272}>
+            <Label text={"clicks: %d", c.clicks} bold={1} />
+            <PrimaryButton text="Click me" w={120} h={36} onClick={c.click} />
+        </Window>;
+    }
 }
 
-void (borrow Counter c) click(NodeId id) {
-    c.clicks = c.clicks + 1;
-    ui.set_text_fmt(c.label, "clicks: %d", "", c.clicks);
-}
+void (borrow Counter c) click() { c.clicks = c.clicks + 1; }
+
+i32 main() { return app.run<Counter>(); }
 ```
 
-The compiler knows nothing about apps: `@app` on `view` becomes the row
-`["app", Counter__view, "Counter", sizeof(Counter), ...]` in the module's
+The compiler knows nothing about apps: `@app` on the struct becomes the row
+`["app", 0, "Counter", sizeof(Counter), ...]` in the module's
 metadata table (`toolchain/MyLangCompiler/docs/grammar.md`, "Attributes and
 annotations"). MyStdLib only exposes the rows as data. The SDK runtime reads
 the current process's rows to start its view and handlers; MyOS reads the same
