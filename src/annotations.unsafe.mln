@@ -1,55 +1,39 @@
 package annotations;
 
-import { CodeAddress } from "@std/core/address.mln";
-
 // The annotations an application is written with -- declarations only.
 //
-//     import { app, timer, key } from ".../annotations.mln";
+//     import { app, timer, key } from "@app/annotations.mln";
 //
-//     @app(single, name = "Editor")
-//     NodeId (Editor *e) view() { return <Window ...>...</Window>; }
+//     @app(name = "Editor", single, opens)
+//     struct Editor { ... };
 //
 //     @key("Ctrl+S")
-//     void (Editor *e) save(NodeId id) { ... }
+//     void (borrow Editor e) save() { ... }
 //
 // Like a Java @interface, each prototype fixes a name and the shape of its
 // arguments; nothing ever calls it. The compiler checks every `@name(args)`
-// against the prototype and records a row -- name, the annotated function,
-// its receiver type's name and size, the arguments -- in the module's
-// metadata table. app.mln reads those rows at boot (through MyStdLib's
-// meta/annotations.mln iterator) and decides what they mean, when, and in
-// what order.
+// against the prototype and records a row -- name, the annotated function, its
+// receiver type's name, the arguments -- in the module's metadata table. Whoever
+// reads the rows, through MyStdLib's meta/annotations.mln, decides what they
+// mean: the shell reads @app from an executable on the disk, and app.run reads
+// @timer and @key from its own image.
 //
-// The first three parameters are always what the row carries about the
-// annotated function; the rest are the annotation's own arguments, literal
-// only, with defaults for the ones a use may leave out.
-//
-// A registered method is called with the instance pointer first --
-// view(self), poll(self), save(self, id), open(self, path) -- and the DOM's
-// uniform `handler(owner, id, arg)` reaches it the same way, since the
-// calling convention ignores trailing arguments. Methods must therefore
-// take a pointer receiver, which the compiler checks.
+// A parameter is an argument of the annotation, literal only, with a default
+// for one a use may leave out. A @timer or @key method is called with the
+// instance and nothing else, so it takes its receiver by reference, which the
+// compiler checks.
 
-// On a type's view method: the type is an application. The framework
-// allocates `size` bytes per instance (zeroed), calls view(self) to build
-// the window and routes the window's events to the instance.
+// On a struct: the type is an application. This is what the shell knows of it
+// without starting it.
 // `single`: launching it again focuses the running instance instead.
 // `name`: the launcher label (default: the type's name).
 // `opens`: it takes the paths other apps hand to ui.open(), in App's `open`.
-export void app(CodeAddress view, char *type, i32 size, bool single = false, char *name = "", bool opens = false);
+export void app(bool single = false, char *name = "", bool opens = false);
 
-// fn(self) every `ms` milliseconds while an instance is mounted.
-export void timer(CodeAddress fn, char *type, i32 size, i32 ms);
+// The method, every `ms` milliseconds while the app runs.
+export void timer(i32 ms);
 
-// fn(self, id, code | mods << 16) when the key is pressed while the type's
-// window is active. "Ctrl", "Shift", "Alt" and a key: a character, "Enter",
-// "Esc", "Tab", "Space", "Left"..., "F1".."F12".
-export void key(CodeAddress fn, char *type, i32 size, char *combo);
-
-// fn(self, path) when another app calls ui.open(path). A single-instance
-// app's running instance receives it; otherwise a new one is started.
-export void open(CodeAddress fn, char *type, i32 size);
-
-// fn(self) when the user closes the window, before the framework frees
-// the instance and everything it created.
-export void on_close(CodeAddress fn, char *type, i32 size);
+// The method, when the key is pressed while the app's window is active. "Ctrl",
+// "Shift", "Alt" and a key: a character, "Enter", "Esc", "Tab", "Space",
+// "Left"..., "F1".."F12".
+export void key(char *combo);

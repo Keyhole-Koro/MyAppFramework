@@ -144,7 +144,7 @@ export const i32 ACCENT = 0x3B82F6;         // highlights and primary actions
 
 // --- other apps ---------------------------------------------------------------------------------
 
-/** Hand a path to whichever app declares @open.
+/** Hand a path to whichever app declares `opens`.
  * @param path NUL-terminated path to open.
  * @return Ok(Some(window)) when delivered immediately, Ok(None) while the
  *         target app is starting, or Err when opening cannot be completed.

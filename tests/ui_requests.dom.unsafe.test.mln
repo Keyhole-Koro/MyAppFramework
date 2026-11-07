@@ -72,7 +72,7 @@ Result<i32, AllocationError> test_alloc(i32 size) {
     return Ok(at);
 }
 
-void no_tick(i32 owner, NodeId id, i32 arg) { }
+void no_tick(i32 owner) { }
 
 void expect_request(i32 count, i32 op, i32 a0, str what) {
     assert.assert_true(g_requests == count, what);

@@ -1,23 +1,18 @@
 package runtime;
 
-// The application side of the framework: what runs inside an app process
-// to turn its annotations and markup handlers into behaviour. The OS never
-// calls into it -- it only sends events (contracts/myapp/message.contract.mln); app_main.mln
-// starts it.
+// The application side of the framework: what runs inside an app process to
+// turn its annotations and markup handlers into behaviour. The OS never calls
+// into it -- it only sends events (contracts/myapp/message.contract.mln); app.run
+// drives it.
 //
-// - The handler table: `onClick={c->click}` in markup, @timer / @key /
-//   @open / @on_close methods -- all registered here as (owner, id, kind)
-//   -> function, and called from pump() when the matching event arrives.
-//   The server holds no app function pointers.
-// - start(): what an instance does when launched -- run its @app view, tell
-//   the shell its window (MAIN_WINDOW), set up its timers and key claims,
-//   note its open / close handlers.
-// - pump(): take every pending event and dispatch it. run() loops on it:
-//   the app's event loop, on its own task.
+// - The handler table: `onClick={c.click}` in markup and @timer / @key methods
+//   are registered here as (key, kind) -> function, and called from next() when
+//   the matching event arrives. The server holds no app function pointers.
+// - start_annotations(): creates the app's timers and claims its keys.
+// - next(): takes one event and runs its handler, or says what app.run has to do.
 //
-// Handlers are called as fn(self, id, arg) with self = the instance, so
-// a method `void (borrow T self) tick()` or `(borrow T self) save(NodeId id)` is
-// passed as is (the calling convention ignores trailing arguments).
+// A handler is called with the instance and the value its event carries, and a
+// method is passed as is, because a `borrow` receiver is an address underneath.
 
 import app_transport from "transport.mln";
 import app_allocator from "allocator.mln";
@@ -86,91 +81,66 @@ i32 HANDLERS_MAX = 256;
 
 // What a handler takes after its receiver, which is what its event carries.
 enum HandlerShape {
-    WORDS,  // (NodeId id, i32 arg)
+    NONE,   // ()
     FLAG,   // (bool on)
     TEXT,   // (str text), read from the node
     ROW,    // (i32 row)
-    NONE,   // ()
 }
 
 struct Handler {
-    i32 owner;
-    i32 key;           // node id, KEY claim token, or 0 for OPEN / CLOSE
+    i32 key;           // node id, or KEY claim token
     EventKind kind;
     HandlerShape shape;
-    fn(i32 owner, NodeId id, i32 arg) -> void callback;
+    fn(i32 owner) -> void callback;
 };
 Handler handlers[256];
 i32 handler_count = 0;
 
-// Register fn for (key, kind) on the current instance.
+/** Registers a handler of an event that carries nothing. */
 @safe
-export void on(i32 key, EventKind kind, fn(i32 owner, NodeId id, i32 arg) -> void callback) {
-    add_handler(key, kind, HandlerShape::WORDS, callback);
+export void on_event(i32 key, EventKind kind, fn(i32 owner) -> void callback) {
+    add_handler(key, kind, HandlerShape::NONE, callback);
 }
 
 /** Registers a handler of a change that carries an on or off. */
 @safe
 export void on_flag(i32 key, EventKind kind, fn(i32 owner, bool on) -> void callback) {
-    add_handler(key, kind, HandlerShape::FLAG, (fn(i32 owner, NodeId id, i32 arg) -> void)callback);
+    add_handler(key, kind, HandlerShape::FLAG, (fn(i32 owner) -> void)callback);
 }
 
 /** Registers a handler of a change that carries the node's text. */
 @safe
 export void on_text(i32 key, EventKind kind, fn(i32 owner, str text) -> void callback) {
-    add_handler(key, kind, HandlerShape::TEXT, (fn(i32 owner, NodeId id, i32 arg) -> void)callback);
+    add_handler(key, kind, HandlerShape::TEXT, (fn(i32 owner) -> void)callback);
 }
 
 /** Registers a handler of an event that carries a row. */
 @safe
 export void on_row(i32 key, EventKind kind, fn(i32 owner, i32 row) -> void callback) {
-    add_handler(key, kind, HandlerShape::ROW, (fn(i32 owner, NodeId id, i32 arg) -> void)callback);
+    add_handler(key, kind, HandlerShape::ROW, (fn(i32 owner) -> void)callback);
 }
 
-/** Registers a handler of an event that carries nothing. */
-@safe
-export void on_event(i32 key, EventKind kind, fn(i32 owner) -> void callback) {
-    add_handler(key, kind, HandlerShape::NONE, (fn(i32 owner, NodeId id, i32 arg) -> void)callback);
-}
-
-void add_handler(i32 key, EventKind kind, HandlerShape shape, fn(i32 owner, NodeId id, i32 arg) -> void callback) {
-    if (callback == 0) { return; }
-    i32 i = 0;
-    while (i < handler_count) {
-        if (handlers[i].callback == 0) { break; }
-        i++;
-    }
-    if (i == handler_count) {
-        if (handler_count >= HANDLERS_MAX) { return; }
-        handler_count++;
-    }
-    handlers[i].owner = current_owner;
-    handlers[i].key = key;
-    handlers[i].kind = kind;
-    handlers[i].shape = shape;
-    handlers[i].callback = callback;
+void add_handler(i32 key, EventKind kind, HandlerShape shape, fn(i32 owner) -> void callback) {
+    if (callback == 0 || handler_count >= HANDLERS_MAX) { return; }
+    handlers[handler_count].key = key;
+    handlers[handler_count].kind = kind;
+    handlers[handler_count].shape = shape;
+    handlers[handler_count].callback = callback;
+    handler_count++;
 }
 
 // The row of the handler for (key, kind), or -1.
-i32 find_handler(i32 owner, i32 key, EventKind kind) {
+i32 find_handler(i32 key, EventKind kind) {
     i32 i = 0;
     while (i < handler_count) {
-        if (handlers[i].callback != 0 && handlers[i].owner == owner && handlers[i].key == key && handlers[i].kind == kind) {
-            return i;
-        }
+        if (handlers[i].key == key && handlers[i].kind == kind) { return i; }
         i++;
     }
     return -1;
 }
 
-fn(i32 owner, NodeId id, i32 arg) -> void lookup(i32 owner, i32 key, EventKind kind) {
-    i32 row = find_handler(owner, key, kind);
-    if (row < 0) { return 0; }
-    return handlers[row].callback;
-}
-
 void call_handler(i32 row, Event *ev) {
-    fn(i32 owner, NodeId id, i32 arg) -> void callback = handlers[row].callback;
+    fn(i32 owner) -> void callback = handlers[row].callback;
     if (handlers[row].shape == HandlerShape::FLAG) {
         fn(i32 owner, bool on) -> void flag = (fn(i32 owner, bool on) -> void)callback;
         flag(current_owner, ev->arg != 0);
@@ -186,20 +156,7 @@ void call_handler(i32 row, Event *ev) {
         selected(current_owner, ev->arg);
         return;
     }
-    if (handlers[row].shape == HandlerShape::NONE) {
-        fn(i32 owner) -> void plain = (fn(i32 owner) -> void)callback;
-        plain(current_owner);
-        return;
-    }
-    callback(current_owner, NodeId(ev->id), ev->arg);
-}
-
-void forget(i32 owner) {
-    i32 i = 0;
-    while (i < handler_count) {
-        if (handlers[i].owner == owner) { handlers[i].callback = 0; }
-        i++;
-    }
+    callback(current_owner);
 }
 
 // --- requests ------------------------------------------------------------------------------
@@ -525,7 +482,7 @@ export Step next() {
     if (ev.kind == EventKind::CLOSE && ev.id == g_main_window) { return Step::Close; }
     i32 key = ev.id;
     if (ev.kind == EventKind::KEY) { key = ev.token; }
-    i32 row = find_handler(current_owner, key, ev.kind);
+    i32 row = find_handler(key, ev.kind);
     if (row >= 0) { call_handler(row, &ev); }
     return Step::Handled;
 }
@@ -550,8 +507,7 @@ void start_annotated(str type) {
         request.a0 = annotation_i32(timers.arg(0));
         ask_node(&request, &created);
         NodeId id = case created of { Ok(value) -> value; Err(e) -> ({ fail_ui(e); (NodeId)0; }); };
-        on((i32)id, EventKind::TIMER,
-           (fn(i32 owner, NodeId id, i32 arg) -> void)annotation_code(timers.fn()));
+        on_event((i32)id, EventKind::TIMER, (fn(i32 owner) -> void)annotation_code(timers.fn()));
     }
     Annotations keys = annotations.where("key", type);
     while (keys.next()) {
@@ -560,8 +516,7 @@ void start_annotated(str type) {
         put_s0(&request, annotation_text(keys.text(0)));
         ask_key(&request, &claimed);
         case claimed of {
-            Ok(token) -> on(token, EventKind::KEY,
-                            (fn(i32 owner, NodeId id, i32 arg) -> void)annotation_code(keys.fn()));
+            Ok(token) -> on_event(token, EventKind::KEY, (fn(i32 owner) -> void)annotation_code(keys.fn()));
             Err(_) -> log("Could not register app keyboard shortcut");
         };
     }
@@ -572,76 +527,4 @@ void start_annotated(str type) {
 export void start_annotations() {
     Annotations rows = annotations.named("app");
     if (rows.next()) { start_annotated(annotation_text(rows.type())); }
-}
-
-// Launch `self`, an instance of the type named `type`: run its @app view
-// (returns the window), create its @timer timers, claim its @key
-// shortcuts and remember its @open / @on_close methods. The annotation
-// rows are read here, in the app, so the OS needs to know nothing about
-// those annotations but @app itself.
-export void start(i32 self, str type) {
-    current_owner = self;   // for the rest of the process's life
-    Annotations app = annotations.where("app", type);
-    if (app.next()) {
-        fn(i32 self) -> NodeId view = (fn(i32 self) -> NodeId)annotation_code(app.fn());
-        NodeId win = view(self);
-        send_app_value(AppOp::MAIN_WINDOW, (i32)win, "");
-    }
-    start_annotated(type);
-    Annotations opens = annotations.where("open", type);
-    if (opens.next()) {
-        on(0, EventKind::OPEN,
-           (fn(i32 owner, NodeId id, i32 arg) -> void)annotation_code(opens.fn()));
-    }
-    Annotations closes = annotations.where("on_close", type);
-    if (closes.next()) {
-        on(0, EventKind::CLOSE,
-           (fn(i32 owner, NodeId id, i32 arg) -> void)annotation_code(closes.fn()));
-    }
-}
-
-void deliver(Event *ev) {
-    i32 key = ev->id;
-    if (ev->kind == EventKind::KEY) { key = ev->token; }
-    if (ev->kind == EventKind::OPEN) { key = 0; }
-    if (ev->kind == EventKind::CLOSE) { key = 0; }
-    i32 self = current_owner;
-    fn(i32 owner, NodeId id, i32 arg) -> void handler = lookup(self, key, ev->kind);
-    if (handler != 0) {
-        if (ev->kind == EventKind::OPEN) {
-            // A handler's receiver and argument are lent for the call, so the
-            // path is a `borrow Text<64>` to the app: its address takes the
-            // place of the node.
-            g_open_path.clear();
-            g_open_path.append(str.from_c(&ev->text[0]));
-            handler(self, NodeId((i32)(&g_open_path)), 0);
-        } else {
-            handler(self, NodeId(ev->id), ev->arg);
-        }
-    }
-    if (ev->kind == EventKind::CLOSE) {
-        // The window is going away: after the app's own on_close, the
-        // instance is done -- drop its handlers, tell the OS (it frees what
-        // the instance owned) and end.
-        forget(self);
-        send_app_value(AppOp::EXIT, 0, "");
-        app_transport.exit();
-    }
-}
-
-// Deliver every pending event to its handler.
-export void pump() {
-    Event ev;
-    while (app_transport.poll(&ev)) {
-        deliver(&ev);
-    }
-}
-
-// The app's event loop: drain queued events, then block until a producer
-// publishes another event notification.
-export void run() {
-    while (1) {
-        pump();
-        app_transport.idle();
-    }
 }

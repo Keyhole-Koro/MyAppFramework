@@ -27,9 +27,8 @@ import str from "@std/text/str.mln";
 // (system/MyOS/src/ui/protocol_elements.mln) with the new node's id. Handler
 // parameters (on*) never leave the app: they go into the runtime's handler
 // table against that id, and the server's CLICK / CHANGE / ACTIVATE / TIMER
-// events come back to them as fn(owner, id, arg) -- a method or plain
-// handler is passed as is, since the calling convention ignores trailing
-// arguments. Since apps run as processes, the request becomes a syscall and
+// events come back to them with the value the parameter's type says, and never
+// the node's id. Since apps run as processes, the request becomes a syscall and
 // no markup changes.
 
 // Children of an element are attached with the `append_child` in scope.
@@ -39,10 +38,9 @@ Result<NodeId, UiError> create(Request request) {
     return result;
 }
 
-void register_handler(Result<NodeId, UiError> result, EventKind kind,
-                      fn(i32 owner, NodeId id, i32 arg) -> void callback) {
+void register_handler(Result<NodeId, UiError> result, EventKind kind, fn(i32 owner) -> void callback) {
     case result of {
-        Ok(id) -> ({ runtime.on((i32)id, kind, callback); });
+        Ok(id) -> ({ runtime.on_event((i32)id, kind, callback); });
         Err(_) -> _;
     };
 }
@@ -75,18 +73,17 @@ export Result<_, UiError> append_child(NodeId parent, NodeId child) {
 }
 
 /**
- * Lowers JSX `<Window title="..." x={...} y={...} w={...} h={...} testId="..." />`.
+ * Lowers JSX `<Window title="..." w={...} h={...} testId="..." />`. The shell
+ * decides where it goes.
  * @param title Window title text.
- * @param x Logical X coordinate (default 0).
- * @param y Logical Y coordinate (default 0).
  * @param w Logical width (default 400).
  * @param h Logical height (default 300).
  * @param testId Stable automation locator id (default none).
  * @return DOM Node ID.
  */
-export Result<NodeId, UiError> Window(str title, i32 x = 0, i32 y = 0, i32 w = 400, i32 h = 300, str testId = "") {
+export Result<NodeId, UiError> Window(str title, i32 w = 400, i32 h = 300, str testId = "") {
     Request request = runtime.ui_request(UiOp::CREATE_WINDOW);
-    request.a0 = x; request.a1 = y; request.a2 = w; request.a3 = h;
+    request.a2 = w; request.a3 = h;
     runtime.put_s0(&request, title); runtime.put_s1(&request, testId);
     return create(request);
 }
@@ -102,7 +99,7 @@ export Result<NodeId, UiError> Window(str title, i32 x = 0, i32 y = 0, i32 w = 4
  * @param testId Stable automation locator id (default none).
  * @return DOM Node ID.
  */
-export Result<NodeId, UiError> Button(str text, i32 x = 0, i32 y = 0, i32 w = 90, i32 h = 34, fn(i32 owner, NodeId id, i32 arg) -> void onClick = 0, str testId = "") {
+export Result<NodeId, UiError> Button(str text, i32 x = 0, i32 y = 0, i32 w = 90, i32 h = 34, fn(i32 owner) -> void onClick = 0, str testId = "") {
     Request request = runtime.ui_request(UiOp::CREATE_BUTTON);
     request.a0 = x; request.a1 = y; request.a2 = w; request.a3 = h;
     runtime.put_s0(&request, text); runtime.put_s1(&request, testId);
@@ -123,7 +120,7 @@ export Result<NodeId, UiError> Button(str text, i32 x = 0, i32 y = 0, i32 w = 90
  * @param testId Stable automation locator id (default none).
  * @return DOM Node ID.
  */
-export Result<NodeId, UiError> PrimaryButton(str text, i32 x = 0, i32 y = 0, i32 w = 90, i32 h = 34, fn(i32 owner, NodeId id, i32 arg) -> void onClick = 0, str testId = "") {
+export Result<NodeId, UiError> PrimaryButton(str text, i32 x = 0, i32 y = 0, i32 w = 90, i32 h = 34, fn(i32 owner) -> void onClick = 0, str testId = "") {
     Request request = runtime.ui_request(UiOp::CREATE_PRIMARY_BUTTON);
     request.a0 = x; request.a1 = y; request.a2 = w; request.a3 = h;
     runtime.put_s0(&request, text); runtime.put_s1(&request, testId);
@@ -305,7 +302,7 @@ export Result<NodeId, UiError> Separator(i32 x = 0, i32 y = 0, i32 w = 100) {
  * @param onTick Timer callback function pointer.
  * @return DOM Node ID.
  */
-export Result<NodeId, UiError> Timer(i32 interval, fn(i32 owner, NodeId id, i32 arg) -> void onTick) {
+export Result<NodeId, UiError> Timer(i32 interval, fn(i32 owner) -> void onTick) {
     Request request = runtime.ui_request(UiOp::CREATE_TIMER);
     request.a0 = interval;
     Result<NodeId, UiError> result = create(request);
@@ -325,11 +322,11 @@ export Result<NodeId, UiError> Timer(i32 interval, fn(i32 owner, NodeId id, i32 
  * @param h Logical height (default 200).
  * @param capacity Buffer capacity in bytes (default 1024).
  * @param readonly Non-zero for read-only / display console mode (default 0).
- * @param onChange Text change callback function pointer (default none).
+ * @param onChange Called with the text when the user changes it (default none).
  * @param testId Stable automation locator id (default none).
  * @return DOM Node ID.
  */
-export Result<NodeId, UiError> TextArea(str name, TextField field = 0, TextLog log = 0, str text = "", i32 x = 0, i32 y = 0, i32 w = 300, i32 h = 200, i32 capacity = 1024, i32 readonly = 0, fn(i32 owner, NodeId id, i32 arg) -> void onChange = 0, str testId = "") {
+export Result<NodeId, UiError> TextArea(str name, TextField field = 0, TextLog log = 0, str text = "", i32 x = 0, i32 y = 0, i32 w = 300, i32 h = 200, i32 capacity = 1024, i32 readonly = 0, fn(i32 owner, str text) -> void onChange = 0, str testId = "") {
     Request request = runtime.ui_request(UiOp::CREATE_TEXT_AREA);
     request.a0 = x; request.a1 = y; request.a2 = w; request.a3 = h;
     request.a4 = capacity; request.a5 = readonly;
@@ -340,10 +337,10 @@ export Result<NodeId, UiError> TextArea(str name, TextField field = 0, TextLog l
             runtime.attach((i32)field, id);
             runtime.attach((i32)log, id);
             if (!text.is_empty()) { ui.area_append(id, text); }
+            runtime.on_text((i32)id, EventKind::CHANGE, onChange);
         });
         Err(_) -> _;
     };
-    register_handler(result, EventKind::CHANGE, onChange);
     return result;
 }
 
@@ -400,7 +397,7 @@ export Result<NodeId, UiError> List(str name, str items = "", Option<i32> select
  * @return DOM Node ID of its window.
  */
 export Result<NodeId, UiError> Dialog(bool when, str title, str text, str confirm = "OK", str cancel = "Cancel", fn(i32 owner) -> void onConfirm = 0, fn(i32 owner) -> void onCancel = 0) {
-    NodeId window = Window(title, 0, 0, 340, 140, "")?;
+    NodeId window = Window(title, 340, 140, "")?;
     NodeId label = Label(text, 20, 16, 0, 0, "")?;
     append_child(window, label)?;
     NodeId row = Row(20, 60, 300, 34, 0, 10)?;
@@ -424,9 +421,9 @@ export void dom_append_child(NodeId parent, NodeId child) {
     if (runtime.is_dialog(child)) { return; }
     unwrap_append(append_child(parent, child));
 }
-export NodeId dom_Window(str title, i32 x, i32 y, i32 w, i32 h, str testId) { return unwrap_node(Window(title, x, y, w, h, testId)); }
-export NodeId dom_Button(str text, i32 x, i32 y, i32 w, i32 h, fn(i32 owner, NodeId id, i32 arg) -> void onClick, str testId) { return unwrap_node(Button(text, x, y, w, h, onClick, testId)); }
-export NodeId dom_PrimaryButton(str text, i32 x, i32 y, i32 w, i32 h, fn(i32 owner, NodeId id, i32 arg) -> void onClick, str testId) { return unwrap_node(PrimaryButton(text, x, y, w, h, onClick, testId)); }
+export NodeId dom_Window(str title, i32 w, i32 h, str testId) { return unwrap_node(Window(title, w, h, testId)); }
+export NodeId dom_Button(str text, i32 x, i32 y, i32 w, i32 h, fn(i32 owner) -> void onClick, str testId) { return unwrap_node(Button(text, x, y, w, h, onClick, testId)); }
+export NodeId dom_PrimaryButton(str text, i32 x, i32 y, i32 w, i32 h, fn(i32 owner) -> void onClick, str testId) { return unwrap_node(PrimaryButton(text, x, y, w, h, onClick, testId)); }
 export NodeId dom_Text(str text, i32 x, i32 y, str testId) { return unwrap_node(Text(text, x, y, testId)); }
 export NodeId dom_Label(str text, i32 x, i32 y, i32 color, i32 bold, str testId) { return unwrap_node(Label(text, x, y, color, bold, testId)); }
 export NodeId dom_Box(i32 x, i32 y, i32 w, i32 h, i32 background, i32 border) { return unwrap_node(Box(x, y, w, h, background, border)); }
@@ -436,8 +433,8 @@ export NodeId dom_Row(i32 x, i32 y, i32 w, i32 h, i32 padding, i32 gap) { return
 export NodeId dom_TextInput(str placeholder, TextField field, i32 x, i32 y, i32 w, i32 h, i32 capacity, bool focus, fn(i32 owner, str text) -> void onChange, str testId) { return unwrap_node(TextInput(placeholder, field, x, y, w, h, capacity, focus, onChange, testId)); }
 export NodeId dom_Checkbox(str text, i32 x, i32 y, bool checked, fn(i32 owner, bool on) -> void onChange, str testId) { return unwrap_node(Checkbox(text, x, y, checked, onChange, testId)); }
 export NodeId dom_Separator(i32 x, i32 y, i32 w) { return unwrap_node(Separator(x, y, w)); }
-export NodeId dom_Timer(i32 interval, fn(i32 owner, NodeId id, i32 arg) -> void onTick) { return unwrap_node(Timer(interval, onTick)); }
-export NodeId dom_TextArea(str name, TextField field, TextLog log, str text, i32 x, i32 y, i32 w, i32 h, i32 capacity, i32 readonly, fn(i32 owner, NodeId id, i32 arg) -> void onChange, str testId) { return unwrap_node(TextArea(name, field, log, text, x, y, w, h, capacity, readonly, onChange, testId)); }
+export NodeId dom_Timer(i32 interval, fn(i32 owner) -> void onTick) { return unwrap_node(Timer(interval, onTick)); }
+export NodeId dom_TextArea(str name, TextField field, TextLog log, str text, i32 x, i32 y, i32 w, i32 h, i32 capacity, i32 readonly, fn(i32 owner, str text) -> void onChange, str testId) { return unwrap_node(TextArea(name, field, log, text, x, y, w, h, capacity, readonly, onChange, testId)); }
 export NodeId dom_List(str name, str items, Option<i32> selected, i32 x, i32 y, i32 w, i32 h, i32 capacity, bool focus, fn(i32 owner, i32 row) -> void onChange, fn(i32 owner, i32 row) -> void onActivate, str testId) { return unwrap_node(List(name, items, selected, x, y, w, h, capacity, focus, onChange, onActivate, testId)); }
 export NodeId dom_Dialog(bool when, str title, str text, str confirm, str cancel, fn(i32 owner) -> void onConfirm, fn(i32 owner) -> void onCancel) { return unwrap_node(Dialog(when, title, text, confirm, cancel, onConfirm, onCancel)); }
 
