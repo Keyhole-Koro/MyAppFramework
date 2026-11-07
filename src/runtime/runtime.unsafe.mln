@@ -229,7 +229,7 @@ export Result<_, AppError> ask_open(borrow Request request) {
     Result<Option<NodeId>, AppError> result = Err(AppError::NoOpenHandler);
     ask(&request, (i32)&result, sizeof(Result<Option<NodeId>, AppError>));
     AppError error = case result of {
-        Ok(window) -> ({ return Ok(_); });
+        Ok(_) -> ({ return Ok(_); });
         Err(value) -> value;
     };
     return Err(error);
