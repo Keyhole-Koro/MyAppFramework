@@ -25,15 +25,15 @@ layer; shared service identifiers and filesystem semantics live under
 
 | file | what it is |
 | --- | --- |
-| `src/annotations.mln` | `@app`, `@timer`, `@key`, `@open`, `@on_close` -- declared as prototypes `(i32 fn, char *type, i32 size, ...)`, like a Java `@interface`; the compiler records each use as a metadata row |
+| `src/annotations.mln` | `@app`, `@timer`, `@key` -- declared as prototypes of their own arguments, like a Java `@interface`; the compiler records each use as a metadata row |
 | `../../contracts/myapp/message.contract.mln` | domain-tagged `Request`, `Event` / `EventKind` data contract |
 | `../../contracts/myapp/ui.contract.mln` | UI-only operation table (`UiOp`) |
 | `../../contracts/myapp/lifecycle.contract.mln` | app-host operations (`AppOp`: open, key claim, main window, exit) |
 | `src/ui.mln` | the UI API an app talks to; the MyOS UI protocol endpoint answers it |
 | `src/elements.mln` | the markup vocabulary (`<Window>`, `<Label>`, ...) and handler registration |
 | `src/runtime/transport.mln` | `Request` / `Event` carriers on top of MyStdLib's MyOS syscall binding |
-| `src/runtime/runtime.mln` | the app side: handler table, `start()` (runs the @app view, sets up @timer / @key / @open / @on_close from the app's own annotation rows), `run()` (the event loop), `log()` |
-| `src/runtime/app_main.mln` | the process entry: finds the @app row in the image, starts the instance, runs the loop |
+| `src/app.mln` | the `App` trait and `app.run<T>()`, which owns the state and runs the event loop |
+| `src/runtime/runtime.mln` | the app side: handler table, bound properties, parts, `start_annotations()` (sets up @timer / @key from the app's own annotation rows), `next()` (takes one event), `log()` |
 | `src/terminal.mln` | UI-specific child stdout ↔ TextLog binding; generic process control is MyStdLib |
 | `docs/APP_FRAMEWORK.md` | how to write an app, and how the framework runs it |
 
@@ -68,7 +68,7 @@ The compiler knows nothing about apps: `@app` on the struct becomes the row
 `["app", 0, "Counter", sizeof(Counter), ...]` in the module's
 metadata table (`toolchain/MyLangCompiler/docs/grammar.md`, "Attributes and
 annotations"). MyStdLib only exposes the rows as data. The SDK runtime reads
-the current process's rows to start its view and handlers; MyOS reads the same
+the current process's rows to start its timers and keys; MyOS reads the same
 rows from `/apps/*.mbin` to discover, launch, and reap installed applications.
 The linker lays each executable's rows out as one section
 (`docs/design/toolchain-collected-sections.md`).

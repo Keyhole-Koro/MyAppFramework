@@ -8,16 +8,16 @@ OSと共有するdata-only契約はFrameworkの所有物ではなく、MyCompute
 
 | ファイル | 役割 |
 | --- | --- |
-| `src/annotations.mln` | `@app` / `@timer` / `@key` / `@open` / `@on_close` の**宣言** |
+| `src/annotations.mln` | `@app` / `@timer` / `@key` の**宣言** |
+| `src/app.mln` | `App` トレイトと `app.run<T>()`（状態を持ち、イベントループを回す） |
 | `../../contracts/myapp/message.contract.mln` | domain付き `Request`、`Event` / `EventKind`のdata contract |
 | `../../contracts/myapp/ui.contract.mln` | DOM/widgetだけの `UiOp` |
 | `../../contracts/myapp/lifecycle.contract.mln` | shell/lifecycleの `AppOp` |
 | `src/runtime/transport.mln` | MyStdLibのMyOS syscall binding上の `request` / `poll` / `idle` / `exit` |
 | `src/ui.mln` | アプリが呼べる UI API（1 関数 = 1 要求） |
 | `src/elements.mln` | markup の語彙とデフォルト（`<Window>` … = CREATE_\* 要求） |
-| `src/runtime/runtime.mln` | ハンドラ表、`start()`（`@app` の view を呼び、`@timer` / `@key` / `@open` / `@on_close` を登録）、`run()`（イベントループ）、`log()` |
-| `src/runtime/app_main.mln` | プロセスのエントリ：この image の `@app` 行を見つけて `start` → `run` |
-| `src/terminal.mln` | child stdoutをTextAreaへ結ぶUI固有連携。汎用FS/process APIはMyStdLib `hosted/` |
+| `src/runtime/runtime.mln` | ハンドラ表、束縛した属性、部品、`start_annotations()`（`@timer` / `@key` を登録）、`next()`（イベントを 1 つ取る）、`log()` |
+| `src/terminal.mln` | child stdoutを`TextLog`へ結ぶUI固有連携。汎用FS/process APIはMyStdLib `hosted/` |
 
 UI protocol endpoint（`MyOS/src/ui/protocol.mln`, `protocol_elements.mln`）が要求に答える。`@app` の
 schema とプロセス内の view 起動は SDK、インストール済みアプリの発見・起動・ウィンドウ管理・
@@ -49,7 +49,7 @@ impl App for Counter {
     Self start() { return Counter { step: 1 }; } // 初期値はここで
 
     View (Self c) view() {
-        return <Window title="Counter" x={96} y={72} w={400} h={272}>
+        return <Window title="Counter" w={400} h={272}>
             <Label text={"clicks: %d", c.clicks} bold={1} testId="counter" />
             <PrimaryButton text="Click me" w={120} h={36} onClick={c.click} />
         </Window>;
@@ -63,42 +63,43 @@ void (borrow Counter c) click() {
 i32 main() { return app.run<Counter>(); }
 ```
 
-- **アノテーションは import する宣言。** `@app` / `@timer` / `@key` / `@open` /
-  `@on_close` は `annotations.mln` のプロトタイプ `export void app(i32 view, char *type, i32 size, ...);`
-  等（Java の `@interface` 相当。呼ばれない）。コンパイラは使用箇所を宣言と照合して
-  メタデータ表に記録し、SDK runtime と MyOS shell が自分の責務に必要な行を読む。
-  import していない名前・引数の形が違う使い方はコンパイルエラー。
+- **アノテーションは import する宣言。** `@app` / `@timer` / `@key` は `annotations.mln` の
+  プロトタイプ `export void timer(i32 ms);` 等（Java の `@interface` 相当。呼ばれない）。
+  コンパイラは使用箇所を宣言と照合してメタデータ表に記録し、SDK runtime と MyOS shell が
+  自分の責務に必要な行を読む。import していない名前・引数の形が違う使い方はコンパイルエラー。
 - **アプリはディスク上の実行形式。** `qa/runners/build_user_apps.py` が各 `.dom.mln` を SDK と
   リンクして `.mbin` にし、mkfs が `/apps` に置く。シェルは起動時に `/apps` の各ファイルの
   ヘッダから `@app` 行を読む。Framework は特定のアプリを知らず、MyOS image にアプリの
   コードをリンクもしない。MyOS リポジトリの `src/apps/` は配布する source package の置き場で、
   MyOS 実装層ではない。
-- **レシーバは参照** (`borrow Counter c`)。framework はインスタンスの
-  アドレスを第一引数に渡すので、値レシーバ（move）は使えない（コンパイルエラー）。
-- **`ref={c.label}`** はそのノードの id をフィールドに書く。木を歩いて id を
-  取り直すコードは要らない。
-- **DOM が持つテキストは部品で読む**：`TextField` の `read()` は次の `read` まで有効な `str` を
+- **ハンドラのレシーバは参照** (`borrow Counter c`)。framework はインスタンスのアドレスを第一引数に
+  渡すので、値レシーバ（move）は使えない（コンパイルエラー）。`view` のレシーバは読むだけ。
+- **ノードの id はアプリに来ない。** 値の属性（`text={"clicks: %d", c.clicks}`）は状態を読み、
+  ハンドラの後で runtime が違いだけを送る。
+- **DOM が持つテキストは部品で読む**：部品は `start` で作り（`ui.field()`、`ui.log()`）、要素に渡す
+  （`field={e.body}`、`log={t.out}`）。`TextField` の `read()` は次の `read` まで有効な `str` を
   返す。サーバの中を指すポインタは返ってこない。
 - **省略できるプロパティ**: `x`/`y`（親原点）、`w`/`h`、`color`、`bold`、
-  `gap`、`padding`、`onClick` 等は `elements.mln` のデフォルトが入る。
-  `testId="..."` は automation 用の名前。
-- **ハンドラはメソッドを直接渡す** (`onClick={c.click}`)。引数は
-  `()`, `(NodeId id)`, `(NodeId id, i32 arg)` のどれでもよい。関数ポインタはアプリの外へ出ない：
-  `runtime.mln` の表に (ノード id, 種別) → メソッドとして残り、サーバからの CLICK / CHANGE
-  イベントで呼ばれる。
+  `gap`、`padding`、`onClick` 等は `elements.mln` のデフォルトが入る。`<Window>` に `x`/`y` は
+  無く、シェルが置く。`testId="..."` は automation 用の名前。
+- **ハンドラはメソッドを直接渡す** (`onClick={c.click}`)。受け取るのはイベントが運ぶ値か、それより
+  少ない値だけで、ノードの id は渡らない：`onClick` は `()`、`TextInput` の `onChange` は
+  `(str text)`、`Checkbox` の `onChange` は `(bool on)`、`List` の `onChange` は `(i32 row)`。
+  関数ポインタはアプリの外へ出ない：`runtime.mln` の表に (ノード id, 種別) → メソッドとして残り、
+  サーバからの CLICK / CHANGE イベントで呼ばれる。
 
-### メソッド属性
+### 属性と `App` のメソッド
 
-| 属性 | 意味 | 形 |
-| --- | --- | --- |
-| `@app` / `@app(single)` / `@app(name = "...")` | この view を持つ型をアプリに。`single` は 2 回目の起動で既存ウィンドウを前面に | `i32 (T *self) view()` |
-| `@open` | 他アプリの `ui.open(path)` を受ける。`single` なら既存インスタンスへ | `(borrow Text<64> path)` |
-| `@on_close` | ユーザーがウィンドウを閉じた。後始末のあと runtime が EXIT を送り、MyOS が所有物を回収する | `()` / `(NodeId id)` |
-| `@timer(ms)` | mount 中、周期的に呼ばれる。インスタンスごとに 1 本 | `()` / `(NodeId id)` |
-| `@key("Ctrl+S")` | そのウィンドウがアクティブな間のショートカット | `()` / `(NodeId id)` / `(id, arg)` |
+| 書くもの | 意味 |
+| --- | --- |
+| `@app` / `@app(single)` / `@app(name = "...")` / `@app(opens)` | `struct` に付けて型をアプリに。`single` は 2 回目の起動で既存ウィンドウを前面に、`opens` は他アプリの `ui.open(path)` を受ける |
+| `open(str path)` | `opens` のアプリが受けるパス。起動直後は `""` で呼ばれる |
+| `close()` | ユーザーがウィンドウを閉じた。後始末のあと runtime が EXIT を送り、MyOS が所有物を回収する |
+| `@timer(ms)` | メソッドに付ける。周期的に呼ばれる |
+| `@key("Ctrl+S")` | メソッドに付ける。そのウィンドウがアクティブな間のショートカット |
 
-`src/apps/editor.dom.mln`（`single` + `@open` + `@key`）、`terminal.dom.mln`
-（`@timer` + `@key("Enter")` + `@on_close`）、`files.dom.mln`（ダイアログ）が実例。
+`src/apps/editor.dom.mln`（`single` + `opens` + `@key`）、`terminal.dom.mln`
+（`@timer` + `@key("Enter")` + `close`）、`files.dom.mln`（`List` と `Dialog`）が実例。
 
 ## アプリが触れるもの
 
@@ -113,13 +114,9 @@ wire 上では **i32 と char\*** を使う。
 
 - テキスト: `TextField`（`read`, `write`, `append`, `clear`, `focus`）, `TextLog`（`append`）。
   ラベルの文字は `text={...}` の属性が状態から更新する
-- ウィジェット: `is_checked` (`Result<bool, UiError>`), `set_checked`, `input_set`,
-  `area_append`, `area_clear`, `area_lines` / `list_count` (`Result<i32, UiError>`),
-  `list_set_items`, `list_selected` (`Result<Option<i32>, UiError>`),
-  `list_item` (`Result<i32, UiError>`)
-- ウィンドウ: `focus`, `focus_window`, `show(win)`（自作ダイアログを載せる）,
-  `close(win)`, `window_of`, `window_x/y`
-- 他アプリ: `open(path)` → `@open` を持つアプリへ
+- リストとダイアログ: `<List items={...} selected={...}>`、`<Dialog when={...}>`。項目も選択も
+  出し入れも値で渡す
+- 他アプリ: `ui.open(path)` → `opens` を持つアプリへ
 
 ## 裏側
 
@@ -127,32 +124,31 @@ wire 上では **i32 と char\*** を使う。
 
 ```mylang
 // annotations.mln — 宣言だけ
-export void app(i32 view, char *type, i32 size, bool single = false, char *name = "");
-export void timer(i32 fn, char *type, i32 size, i32 ms);
+export void app(bool single = false, char *name = "", bool opens = false);
+export void timer(i32 ms);
 ```
 
 `@timer(100)` を `Terminal` の `poll` に付けると、コンパイラは terminal.dom.mln の
-`annotations` セクションに 1 行 `["timer", Terminal__poll, "Terminal", sizeof(Terminal), 1, 100, 0, 0]`
+`annotations` セクションに 1 行 `["timer", Terminal__poll, "Terminal", 1, 100, 0, 0]`
 を静的データとして出す。リンカがその実行形式の全モジュールの行を 1 本の
 `annotations` セクションに連結する。読み手は 2 つある：
 
-- SDK の `runtime/app_main.mln` と `runtime/runtime.mln` は、実行中 image の `@app` row から
-  instance を作り、同じ receiver type の `@timer` / `@key` / `@open` / `@on_close` を登録する。
+- SDK の `runtime/runtime.mln` は、実行中 image の `@app` row から型名を取り、同じ receiver type の
+  `@timer` / `@key` を登録する。インスタンスは `app.run<T>()` が `T::start()` で作る。
 - MyOS の `shell/app.mln` は、`annotations.in_image(image)` でディスク上の MBIN を読み、
-  `@app` の name / single と `@open` の有無だけを installed-app registry に入れる。関数ポインタは
+  `@app` の name / single / opens だけを installed-app registry に入れる。関数ポインタは
   読まず、アプリコードもロードしない。
 
 MyStdLib は名前による filter と row access を提供するだけで、上記の意味を知らない。他の
 framework が独自 annotation を同じ表に混ぜても、各読み手は要求した名前だけを見る。仕様は
 `docs/design/toolchain-collected-sections.md`。
 
-- **ハンドラ ABI は 1 種類**: `void handler(i32 owner, NodeId id, i32 arg)`。
-  `owner` はインスタンスのポインタ。呼び出し規約が余分な引数を無視するので、
-  `onClick={c.click}` も `@timer` のメソッドも**メソッドの実体**をそのまま登録する
-  （`(Counter *c, NodeId id)` に `owner` と `id` が届く）。トランポリンは無い。
+- **ハンドラ**: `owner` はインスタンスのアドレスで、続く引数はイベントが運ぶ値（無し、`bool`、
+  `str`、`i32`）。`onClick={c.click}` も `@timer` のメソッドも**メソッドの実体**をそのまま登録する。
+  トランポリンは無い。
 - **イベント** (`docs/design/ui-protocol.md`): 所有ノードへのクリック・変更・タイマは
   UI domainのevent sinkからservice層を通って`Event`としてプロセスのチャネルに積まれ、
-  アプリ側の `runtime.run()` が `poll` で取って表を引きメソッドを呼ぶ。要求は `OS_CALL`
+  `app.run` が `runtime.next()` で取って表を引きメソッドを呼ぶ。要求は `OS_CALL`
   syscallでMyOSへ入り、`ipc/gateway.mln` がユーザメモリをコピーしてservice taskの
   チャネルへ渡し、返事が来るまで
   アプリは sticky notification の `WAIT_NOTIFICATION` で待つ。DOM を触るのはサーバのタスクだけ（automation は `dom.lock`
@@ -160,14 +156,16 @@ framework が独自 annotation を同じ表に混ぜても、各読み手は要�
   起動時に CLAIM_KEY で組み合わせを申告し、シェルが照合して KEY イベントにする。
 - **owner はプロセス**: 要求の `owner` はカーネルが pid に書き換える。`Node.owner` には
   それが入るので、アプリが途中で作ったダイアログやタイマも同じ owner になり、ウィンドウを
-  閉じる → CLOSE → アプリが `@on_close` を走らせて EXIT → シェルが `dom.remove_owned(pid)`
+  閉じる → CLOSE → アプリが `close` を走らせて EXIT → シェルが `dom.remove_owned(pid)`
   で一括回収し、プロセスは終了する。
 - **レジストリ** (`MyOS/src/shell/app.mln`): ディスク上の実行形式ごとに path / type /
-  single / name / `@open` の有無（起動時に全 `.mbin` のヘッダから）。`"Ctrl+S"` の解釈は
-  `key_spec_matches`（claim 表を照合）。タイマ・キー・open・on_close のメソッドはシェルには
-  なく、アプリの `runtime.start()` が自分の行から登録する。
-- **メタデータ表** (`toolchain/MyStdLib/meta/annotations.mln`): 1 行 8 ワード（名前・関数・
-  型名・サイズ・引数数・引数×3）。`section.as_slice<AnnotationRow>("annotations")` で表を
+  single / name / opens（起動時に全 `.mbin` のヘッダから）。`"Ctrl+S"` の解釈は
+  `key_spec_matches`（claim 表を照合）。タイマとキーのメソッドはシェルにはなく、アプリの
+  `runtime.start_annotations()` が自分の行から登録する。
+- **ウィンドウの配置** (`MyOS/src/shell/app.mln`): 新しいウィンドウは一段ずつ右下へずれ、タイトル
+  バーが残る。六段で最初に戻る。
+- **メタデータ表** (`toolchain/MyStdLib/meta/annotations.mln`): 1 行 7 ワード（名前・関数・
+  型名・引数数・引数×3）。`section.as_slice<AnnotationRow>("annotations")` で表を
   スライスとして取り、`Annotations` カーソルが名前／型でフィルタしながら歩く。
 - **表の集約はリンカ**（`.section annotations` の束ね、`__sections` ディレクトリ）。`main.mln`
   に目印は無い。アプリを fs 上の .mbin にする段階では、同じディレクトリを MBIN ヘッダに載せて
@@ -177,29 +175,25 @@ framework が独自 annotation を同じ表に混ぜても、各読み手は要�
 
 ```
 make build                                        # アプリは build/user/*.mbin → disk.img
-python3 system/MyOS/tests/app_framework_test.py   # launcher / single / @key / @open / close / dialog（make framework-test）
+python3 system/MyOS/tests/app_framework_test.py   # launcher / single / @key / opens / close / dialog（make framework-test）
 python3 system/MyOS/tests/dom_click_test.py       # Counter と Notes の操作
 python3 system/MyOS/tests/apps_e2e_test.py        # プロセス / エディタ / ファイラ
 ```
 
 ## 既知の制限
 
-- 1 アプリ（プロセス）が持てるノードは 96 まで（`dom.NODES_PER_OWNER`）。超えると要素は
-  id 0 で返る（描かれない）。id は閉じたウィンドウのものから再利用される。
+- 1 アプリ（プロセス）が持てるノードは 96 まで（`dom.NODES_PER_OWNER`）。超えると作成は
+  `UiError::OwnerNodeLimit` になり、markup はプロセスを終える。id は閉じたウィンドウのものから
+  再利用される。
 - `f->items[0]` のように、ポインタ経由の配列フィールドは添字できない。
-  バッファはモジュール変数か heap に置く（`files.dom.mln` 参照）。
-- `Result<Option<i32>, E>` を値の case で受ける (`Ok(v) -> v`) と struct が
-  コピーされない。文レベルの 2 段 case で読む（`files.dom.mln` の `refresh`）。
+  バッファはモジュール変数か heap に置く。
 - `@task` は無くした（`scheduler.spawn_task` がタスク引数を取れるようになったら関数を 1 つ足すだけ）。
-- struct のフィールド初期化子 (`i32 step = 1;`) は効かない（生成コードが無い）。view() で入れる。
-- `Option` のフィールドも view() で `None` を入れる。インスタンスはゼロ埋めで、ゼロのバイトは
-  `Some(0)` と読める。
+- struct のフィールド初期化子 (`i32 step = 1;`) は効かない（生成コードが無い）。`start` で入れる。
 - グローバルの**ポインタ配列**への実行時代入 (`char *g[16]; g[0] = "x";`) は誤コンパイル
   される（要素ストライドの既知バグ）。シェルの `app.mln` は `i32` 配列 + キャストで持っている。
   静的初期化 (`char *g[] = {"a", "b"};`) は `.word` で正しく出る。
-- 1 プロセス 1 インスタンス（`app_main.mln` が `sizeof` の分だけ `sbrk` で取る）。`@app(single)` は
+- 1 プロセス 1 インスタンス。状態は `app.run` のスタックにある。`@app(single)` は
   シェルが 2 回目の起動を既存プロセスへ向けることで実現する。
-- プロセスのスタックは 16 KiB、ヒープ（`sbrk`）は SDK からは使っていない。大きなバッファは
-  モジュール変数に置く（editor の `g_save_text[4096]`）。
-- 文字列の上限：要求の s0 は 1024 バイト（`list_set_items`）、s1 は 128、TEXT_COPY の
-  戻りは 4096、イベントの文字列（OPEN のパス）は 64。
+- プロセスのスタックは 16 KiB。大きな値は DOM（`TextField`）か `app_allocator` のヒープに置く。
+- 文字列の上限：要求の s0 は 1024 バイト（`items=`）、s1 は 128、TEXT_COPY の戻りは 4096、
+  イベントの文字列（OPEN のパス）は 64。
