@@ -15,7 +15,8 @@ import { NodeId, UiError } from "@contracts/ui/widget.contract.mln";
 import { OsService } from "@contracts/myos/services.contract.mln";
 import { ProcBindArgs, ProcSpawnArgs } from "@contracts/myos/process-args.contract.mln";
 import { SyscallFailure } from "@contracts/myos/syscall.contract.mln";
-import { Pid } from "@contracts/process/control.contract.mln";
+import { Pid, ProcessControlStatus } from "@contracts/process/control.contract.mln";
+import process from "@std/hosted/process.mln";
 import { SpawnError } from "@contracts/process/spawn.contract.mln";
 import { AllocationError } from "@std/memory/allocator.mln";
 import { Result } from "@std/core/result.mln";
@@ -50,7 +51,12 @@ Result<i32, SyscallFailure> recording_service(i32 service, i32 args) {
     g_service = service;
     g_bound_pid = bound->pid;
     g_bound_node = bound->output_node;
-    return Ok(0);
+    return Ok((i32)ProcessControlStatus::Accepted);
+}
+
+Result<i32, SyscallFailure> refusing_service(i32 service, i32 args) {
+    g_service = service;
+    return Ok((i32)ProcessControlStatus::Refused);
 }
 
 i32 g_spawn_node = 0;
@@ -78,24 +84,6 @@ void expect_request(i32 count, i32 op, i32 a0, str what) {
     assert.assert_true(g_requests == count, what);
     assert.assert_true(g_last.op == op, what);
     assert.assert_true(g_last.a0 == a0, what);
-}
-
-/*@Test "widget calls name their operation and node" { step: 5000000; }*/
-void widget_calls_name_their_operation_and_node() {
-    mock.of(app_transport.request).when(mock.any()).call(recording_request);
-    ui.set_checked(NodeId(5), 1);
-    expect_request(1, UiOp::SET_CHECKED, 5, "set_checked");
-    assert.assert_true(g_last.a1 == 1, "set_checked carries the state");
-    ui.area_lines(NodeId(6));
-    expect_request(2, UiOp::AREA_LINES, 6, "area_lines");
-    assert.assert_true(g_last.result_out != 0, "area_lines asks for an answer");
-    ui.list_count(NodeId(7));
-    expect_request(3, UiOp::LIST_COUNT, 7, "list_count");
-    ui.focus_window(NodeId(8));
-    expect_request(4, UiOp::FOCUS_WINDOW, 8, "focus_window");
-    ui.test_id(NodeId(9), "name");
-    expect_request(5, UiOp::TEST_ID, 9, "test_id");
-    assert.assert_true(g_last.s0_len == 4, "test_id carries the name");
 }
 
 /*@Test "a field names its operation and node" { step: 5000000; }*/
@@ -201,9 +189,24 @@ void colours_are_packed_rgb() {
 /*@Test "a terminal binds a process to one of its nodes" { step: 1000000; }*/
 void a_terminal_binds_a_process_to_one_of_its_nodes() {
     mock.of(myos_service.call).when(mock.any(), mock.any()).call(recording_service);
-    terminal.bind(Pid(12), NodeId(34));
+    TextLog log = ui.log();
+    runtime.attach((i32)log, NodeId(34));
+    assert.assert_true(terminal.bind(Pid(12), log).is_ok(), "an accepted bind says so");
     assert.assert_true(g_service == OsService::PROC_BIND, "bind names the service");
     assert.assert_true(g_bound_pid == 12 && g_bound_node == 34, "bind carries the pid and the node");
+}
+
+/*@Test "a refusal reaches the app" { step: 5000000; }*/
+void a_refusal_reaches_the_app() {
+    mock.of(myos_service.call).when(mock.any(), mock.any()).call(refusing_service);
+    TextLog log = ui.log();
+    runtime.attach((i32)log, NodeId(34));
+    assert.assert_true(terminal.bind(Pid(12), log).is_err(), "a refused bind");
+    assert.assert_true(g_service == OsService::PROC_BIND, "names its service");
+    assert.assert_true(terminal.unbind(Pid(12)).is_err(), "a refused unbind");
+    assert.assert_true(g_service == OsService::PROC_UNBIND, "names its service");
+    assert.assert_true(process.feed_line(Pid(12), "x").is_err(), "a refused line");
+    assert.assert_true(g_service == OsService::PROC_FEED, "names its service");
 }
 
 /*@Test "a log adds to its node and goes to a child by itself" { step: 5000000; }*/

@@ -9,15 +9,14 @@ package terminal;
 // hands over the log, never a node.
 
 import runtime from "runtime/runtime.mln";
-import ui from "ui.mln";
 import { TextLog } from "ui.mln";
 import myos_service from "@std/platform/myos/service.mln";
 import { OsService } from "@contracts/myos/services.contract.mln";
 import { Result } from "@std/core/result.mln";
 import { Text } from "@std/text/text.mln";
-import { NodeId } from "@contracts/ui/widget.contract.mln";
 import { SpawnError } from "@contracts/process/spawn.contract.mln";
-import { Pid } from "@contracts/process/control.contract.mln";
+import { Pid, ProcessControlError } from "@contracts/process/control.contract.mln";
+import process from "@std/hosted/process.mln";
 import { ProcSpawnArgs, ProcBindArgs, ProcUnbindArgs } from "@contracts/myos/process-args.contract.mln";
 
 // Start it with its stdout already going to `log`: bound before it runs,
@@ -32,19 +31,24 @@ export Result<Pid, SpawnError> spawn_bound(str path, TextLog log) {
     return result;
 }
 
-// Send the process's stdout to TextArea `node` (one of ours).
+/** Sends a child's stdout to `log` from now on.
+ * @return Ok(_), or Err(InvalidPid) when pid names no child of this process.
+ */
 @safe
-export void bind(Pid pid, NodeId node) {
-    ProcBindArgs args = ProcBindArgs { pid: (i32)pid, output_node: (i32)node };
-    myos_service.call(OsService::PROC_BIND, (i32)(&args));
+export Result<_, ProcessControlError> bind(Pid pid, TextLog log) {
+    ProcBindArgs args = ProcBindArgs { pid: (i32)pid, output_node: (i32)runtime.part_node((i32)log) };
+    return process.control_result(pid, myos_service.call(OsService::PROC_BIND, (i32)(&args)));
 }
 
+/** Stops sending a child's stdout to its log.
+ * @return Ok(_), or Err(InvalidPid) when pid names no child of this process.
+ */
 @safe
-export void unbind(Pid pid) {
+export Result<_, ProcessControlError> unbind(Pid pid) {
     ProcUnbindArgs args = ProcUnbindArgs { pid: (i32)pid };
-    myos_service.call(OsService::PROC_UNBIND, (i32)(&args));
+    return process.control_result(pid, myos_service.call(OsService::PROC_UNBIND, (i32)(&args)));
 }
 
 /** Empties `log`, as a shell's `clear` does. */
 @safe
-export void clear(TextLog log) { ui.area_clear(runtime.part_node((i32)log)); }
+export void clear(TextLog log) { runtime.area_clear(runtime.part_node((i32)log)); }

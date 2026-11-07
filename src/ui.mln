@@ -3,9 +3,7 @@ package ui;
 import runtime from "runtime/runtime.mln";
 import str from "@std/text/str.mln";
 import ascii from "@std/text/ascii.mln";
-import { Option } from "@std/core/option.mln";
 import { Result } from "@std/core/result.mln";
-import { NodeId, UiError } from "@contracts/ui/widget.contract.mln";
 import { UiOp } from "@contracts/myapp/ui.contract.mln";
 import { AppOp, AppError } from "@contracts/myapp/lifecycle.contract.mln";
 import { Request } from "@contracts/myapp/message.contract.mln";
@@ -23,48 +21,6 @@ import { Request } from "@contracts/myapp/message.contract.mln";
 // use Result / Option where absence and failure differ; the gateway copies
 // those data-only contract values back without exposing a server pointer.
 
-// --- widgets --------------------------------------------------------------------------------
-
-export void set_checked(NodeId id, i32 on) {
-    Request request = runtime.ui_request(UiOp::SET_CHECKED);
-    request.a0 = (i32)id; request.a1 = on;
-    runtime.send(&request);
-}
-
-export void input_set(NodeId id, str s) {
-    Request request = runtime.ui_request(UiOp::INPUT_SET);
-    request.a0 = (i32)id; runtime.put_s0(&request, s);
-    runtime.send(&request);
-}
-export void area_append(NodeId id, str s) {
-    Request request = runtime.ui_request(UiOp::AREA_APPEND);
-    request.a0 = (i32)id; runtime.put_s0(&request, s);
-    runtime.send(&request);
-}
-export void area_clear(NodeId id) {
-    Request request = runtime.ui_request(UiOp::AREA_CLEAR);
-    request.a0 = (i32)id;
-    runtime.send(&request);
-}
-/** Returns TextArea line count, or an error for an invalid/non-TextArea node. */
-export Result<i32, UiError> area_lines(NodeId id) {
-    Result<i32, UiError> result = Err(UiError::NodeNotFound(id));
-    Request request = runtime.ui_request(UiOp::AREA_LINES);
-    request.a0 = (i32)id;
-    runtime.ask_i32(&request, &result);
-    return result;
-}
-
-/** Returns List item count, or an error for an invalid/non-List node. */
-export Result<i32, UiError> list_count(NodeId id) {
-    Result<i32, UiError> result = Err(UiError::NodeNotFound(id));
-    Request request = runtime.ui_request(UiOp::LIST_COUNT);
-    request.a0 = (i32)id;
-    runtime.ask_i32(&request, &result);
-    return result;
-}
-
-
 // --- parts ------------------------------------------------------------------------------------
 
 /** Text the DOM keeps: what is being typed, or an Editor's body. An app gets
@@ -78,16 +34,16 @@ export TextField field() { return TextField(runtime.new_part()); }
 export str (TextField f) read() { return runtime.read_text(runtime.part_node((i32)f)); }
 
 /** Replaces the text. */
-export void (TextField f) write(str text) { input_set(runtime.part_node((i32)f), text); }
+export void (TextField f) write(str text) { runtime.input_set(runtime.part_node((i32)f), text); }
 
 /** Adds to the end of a TextArea's text. */
-export void (TextField f) append(str text) { area_append(runtime.part_node((i32)f), text); }
+export void (TextField f) append(str text) { runtime.area_append(runtime.part_node((i32)f), text); }
 
 /** Empties the field. */
-export void (TextField f) clear() { input_set(runtime.part_node((i32)f), ""); }
+export void (TextField f) clear() { runtime.input_set(runtime.part_node((i32)f), ""); }
 
 /** Moves the keyboard to the field. */
-export void (TextField f) focus() { focus(runtime.part_node((i32)f)); }
+export void (TextField f) focus() { runtime.focus(runtime.part_node((i32)f)); }
 
 /** Text the DOM keeps that only grows: a Terminal's output. An app gets one in
  * `start` and gives it to a TextArea with `log=`. */
@@ -97,27 +53,7 @@ export newtype TextLog = i32;
 export TextLog log() { return TextLog(runtime.new_part()); }
 
 /** Adds to the end of the log. */
-export void (TextLog l) append(str text) { area_append(runtime.part_node((i32)l), text); }
-
-// --- focus and windows ------------------------------------------------------------------------
-
-export void focus(NodeId id) {
-    Request request = runtime.ui_request(UiOp::FOCUS);
-    request.a0 = (i32)id;
-    runtime.send(&request);
-}
-export void focus_window(NodeId win) {
-    Request request = runtime.ui_request(UiOp::FOCUS_WINDOW);
-    request.a0 = (i32)win;
-    runtime.send(&request);
-}
-
-// Name a node for automation (dom-tester locators).
-export void test_id(NodeId id, str name) {
-    Request request = runtime.ui_request(UiOp::TEST_ID);
-    request.a0 = (i32)id; runtime.put_s0(&request, name);
-    runtime.send(&request);
-}
+export void (TextLog l) append(str text) { runtime.area_append(runtime.part_node((i32)l), text); }
 
 // --- keys ---------------------------------------------------------------------------------------
 
@@ -146,13 +82,11 @@ export const i32 ACCENT = 0x3B82F6;         // highlights and primary actions
 
 /** Hand a path to whichever app declares `opens`.
  * @param path NUL-terminated path to open.
- * @return Ok(Some(window)) when delivered immediately, Ok(None) while the
- *         target app is starting, or Err when opening cannot be completed.
+ * @return Ok(_) when delivered, or on its way to an app that is starting, or Err
+ *         when opening cannot be completed.
  */
-export Result<Option<NodeId>, AppError> open(str path) {
-    Result<Option<NodeId>, AppError> result = Err(AppError::NoOpenHandler);
+export Result<_, AppError> open(str path) {
     Request request = runtime.app_request(AppOp::OPEN);
     runtime.put_s0(&request, path);
-    runtime.ask_app_option(&request, &result);
-    return result;
+    return runtime.ask_open(&request);
 }

@@ -254,7 +254,7 @@ export Result<NodeId, UiError> TextInput(str placeholder, TextField field = 0, i
         Ok(id) -> ({
             runtime.attach((i32)field, id);
             runtime.on_text((i32)id, EventKind::CHANGE, onChange);
-            if (focus) { ui.focus(id); }
+            if (focus) { runtime.focus(id); }
         });
         Err(_) -> _;
     };
@@ -336,7 +336,7 @@ export Result<NodeId, UiError> TextArea(str name, TextField field = 0, TextLog l
         Ok(id) -> ({
             runtime.attach((i32)field, id);
             runtime.attach((i32)log, id);
-            if (!text.is_empty()) { ui.area_append(id, text); }
+            if (!text.is_empty()) { runtime.area_append(id, text); }
             runtime.on_text((i32)id, EventKind::CHANGE, onChange);
         });
         Err(_) -> _;
@@ -376,7 +376,7 @@ export Result<NodeId, UiError> List(str name, str items = "", Option<i32> select
                 Some(row) -> ({ send_selected(id, row); });
                 None -> _;
             };
-            if (focus) { ui.focus(id); }
+            if (focus) { runtime.focus(id); }
         });
         Err(_) -> _;
     };

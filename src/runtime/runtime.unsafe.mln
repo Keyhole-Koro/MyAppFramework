@@ -223,10 +223,16 @@ export void ask_node(borrow Request request, borrow Result<NodeId, UiError> resu
     ask(&request, (i32)&result, sizeof(Result<NodeId, UiError>));
 }
 
-/** Sends a request and receives its Result<Option<NodeId>, AppError> answer. */
+/** Sends an OPEN request. The answer names the window, which only the shell needs. */
 @safe
-export void ask_app_option(borrow Request request, borrow Result<Option<NodeId>, AppError> result) {
+export Result<_, AppError> ask_open(borrow Request request) {
+    Result<Option<NodeId>, AppError> result = Err(AppError::NoOpenHandler);
     ask(&request, (i32)&result, sizeof(Result<Option<NodeId>, AppError>));
+    AppError error = case result of {
+        Ok(window) -> ({ return Ok(_); });
+        Err(value) -> value;
+    };
+    return Err(error);
 }
 
 /** Sends a request and receives its Result<i32, KeyClaimError> answer. */
@@ -527,4 +533,41 @@ void start_annotated(str type) {
 export void start_annotations() {
     Annotations rows = annotations.named("app");
     if (rows.next()) { start_annotated(annotation_text(rows.type())); }
+}
+
+// --- nodes --------------------------------------------------------------------------------------
+
+// What the framework does to a node for an app. An app holds parts, never nodes,
+// so these stay out of ui.mln.
+
+/** Replaces the text of a TextInput or TextArea. */
+@safe
+export void input_set(NodeId id, str s) {
+    Request request = ui_request(UiOp::INPUT_SET);
+    request.a0 = (i32)id; put_s0(&request, s);
+    send(&request);
+}
+
+/** Adds to the end of a TextArea's text. */
+@safe
+export void area_append(NodeId id, str s) {
+    Request request = ui_request(UiOp::AREA_APPEND);
+    request.a0 = (i32)id; put_s0(&request, s);
+    send(&request);
+}
+
+/** Empties a TextArea. */
+@safe
+export void area_clear(NodeId id) {
+    Request request = ui_request(UiOp::AREA_CLEAR);
+    request.a0 = (i32)id;
+    send(&request);
+}
+
+/** Moves the keyboard to a node. */
+@safe
+export void focus(NodeId id) {
+    Request request = ui_request(UiOp::FOCUS);
+    request.a0 = (i32)id;
+    send(&request);
 }
