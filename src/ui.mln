@@ -77,6 +77,7 @@ export const i32 TEXT_PRIMARY = 0x1F2328;   // body text (the default)
 export const i32 TEXT_SECONDARY = 0x6B7280; // hints, captions, status lines
 export const i32 TEXT_DISABLED = 0xA0A6B0;  // unavailable items
 export const i32 ACCENT = 0x3B82F6;         // highlights and primary actions
+export const i32 GRAPH_SECOND = 0xF59E0B;   // a Graph's `line` series
 
 // --- other apps ---------------------------------------------------------------------------------
 

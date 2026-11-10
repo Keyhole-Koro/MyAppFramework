@@ -384,6 +384,36 @@ export Result<NodeId, UiError> List(str name, str items = "", Option<i32> select
 }
 
 /**
+ * Lowers JSX `<Graph fill={...} line={...} samples={60} />`.
+ * Percentages over time, newest at the right: `fill` is drawn filled under an
+ * accent line, `line` as a second line over it. Each is decimal numbers from
+ * 0 to 100 apart by spaces, oldest first; past `samples` the oldest drop off.
+ * @param x Logical X coordinate (default 0).
+ * @param y Logical Y coordinate (default 0).
+ * @param w Logical width (default 300).
+ * @param h Logical height (default 120).
+ * @param samples How many samples span the width, 2 to 120 (default 60).
+ * @param fill The filled series (default none).
+ * @param line The second series (default none).
+ * @param testId Stable automation locator id (default none).
+ * @return DOM Node ID.
+ */
+export Result<NodeId, UiError> Graph(i32 x = 0, i32 y = 0, i32 w = 300, i32 h = 120, i32 samples = 60, str fill = "", str line = "", str testId = "") {
+    Request request = runtime.ui_request(UiOp::CREATE_GRAPH);
+    request.a0 = x; request.a1 = y; request.a2 = w; request.a3 = h; request.a4 = samples;
+    runtime.put_s1(&request, testId);
+    Result<NodeId, UiError> result = create(request);
+    case result of {
+        Ok(id) -> ({
+            if (!fill.is_empty()) { send_series(id, 0, fill); }
+            if (!line.is_empty()) { send_series(id, 1, line); }
+        });
+        Err(_) -> _;
+    };
+    return result;
+}
+
+/**
  * Lowers JSX `<Dialog when={...} title="..." text="..." confirm="..." cancel="..." onConfirm={...} onCancel={...} />`.
  * A question in a window of its own, up while `when` is true. A handler ends
  * it by changing that state. Closing its window is cancelling.
@@ -436,6 +466,7 @@ export NodeId dom_Separator(i32 x, i32 y, i32 w) { return unwrap_node(Separator(
 export NodeId dom_Timer(i32 interval, fn(i32 owner) -> void onTick) { return unwrap_node(Timer(interval, onTick)); }
 export NodeId dom_TextArea(str name, TextField field, TextLog log, str text, i32 x, i32 y, i32 w, i32 h, i32 capacity, i32 readonly, fn(i32 owner, str text) -> void onChange, str testId) { return unwrap_node(TextArea(name, field, log, text, x, y, w, h, capacity, readonly, onChange, testId)); }
 export NodeId dom_List(str name, str items, Option<i32> selected, i32 x, i32 y, i32 w, i32 h, i32 capacity, bool focus, fn(i32 owner, i32 row) -> void onChange, fn(i32 owner, i32 row) -> void onActivate, str testId) { return unwrap_node(List(name, items, selected, x, y, w, h, capacity, focus, onChange, onActivate, testId)); }
+export NodeId dom_Graph(i32 x, i32 y, i32 w, i32 h, i32 samples, str fill, str line, str testId) { return unwrap_node(Graph(x, y, w, h, samples, fill, line, testId)); }
 export NodeId dom_Dialog(bool when, str title, str text, str confirm, str cancel, fn(i32 owner) -> void onConfirm, fn(i32 owner) -> void onCancel) { return unwrap_node(Dialog(when, title, text, confirm, cancel, onConfirm, onCancel)); }
 
 // --- what follows the state ------------------------------------------------------------
@@ -478,6 +509,22 @@ export void List_items(i32 slot, str value) {
 export void List_selected(i32 slot, Option<i32> value) {
     i32 row = case value of { Some(selected) -> selected; None -> -1; };
     if (runtime.word_changed(slot, row)) { send_selected(runtime.bound(slot), row); }
+}
+
+void send_series(NodeId id, i32 series, str values) {
+    Request request = runtime.ui_request(UiOp::GRAPH_SET);
+    request.a0 = (i32)id;
+    request.a1 = series;
+    runtime.put_s0(&request, values);
+    runtime.send(&request);
+}
+
+export void Graph_fill(i32 slot, str value) {
+    if (runtime.text_changed(slot, value)) { send_series(runtime.bound(slot), 0, value); }
+}
+
+export void Graph_line(i32 slot, str value) {
+    if (runtime.text_changed(slot, value)) { send_series(runtime.bound(slot), 1, value); }
 }
 
 // A dialog starts off the desktop whatever `when` says, so its first pass counts.

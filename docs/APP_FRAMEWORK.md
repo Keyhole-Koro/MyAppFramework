@@ -115,7 +115,10 @@ wire 上では **i32 と char\*** を使う。
 - テキスト: `TextField`（`read`, `write`, `append`, `clear`, `focus`）, `TextLog`（`append`）。
   ラベルの文字は `text={...}` の属性が状態から更新する
 - リストとダイアログ: `<List items={...} selected={...}>`、`<Dialog when={...}>`。項目も選択も
-  出し入れも値で渡す
+  出し入れも値で渡す。行の中のタブで列がそろう（n 個目のタブは行頭から 20px × n の位置へ移る）ので、
+  見出しの `<Label>` と行に同じ数のタブを入れれば表になる
+- グラフ: `<Graph fill={...} line={...} samples={60}>`。0〜100 の百分率を空白区切りで古い順に渡す。
+  `fill` は塗りつぶし、`line` はその上の 2 本目の線（色は `ui.GRAPH_SECOND`）。新しい値が右端
 - 他アプリ: `ui.open(path)` → `opens` を持つアプリへ
 
 ## 裏側
