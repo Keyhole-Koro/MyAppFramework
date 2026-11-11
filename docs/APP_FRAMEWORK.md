@@ -17,7 +17,7 @@ OSと共有するdata-only契約はFrameworkの所有物ではなく、MyCompute
 | `src/ui.mln` | アプリが呼べる UI API（1 関数 = 1 要求） |
 | `src/elements.mln` | markup の語彙とデフォルト（`<Window>` … = CREATE_\* 要求） |
 | `src/runtime/runtime.mln` | ハンドラ表、束縛した属性、部品、`start_annotations()`（`@timer` / `@key` を登録）、`next()`（イベントを 1 つ取る）、`log()` |
-| `src/terminal.mln` | child stdoutを`TextLog`へ結ぶUI固有連携。汎用FS/process APIはMyStdLib `hosted/` |
+| `src/terminal.mln` | プロセスを`Screen`（`<Terminal>`）に載せるUI固有連携。汎用FS/process APIはMyStdLib `hosted/` |
 
 UI protocol endpoint（`MyOS/src/ui/protocol.mln`, `protocol_elements.mln`）が要求に答える。`@app` の
 schema とプロセス内の view 起動は SDK、インストール済みアプリの発見・起動・ウィンドウ管理・
@@ -76,8 +76,8 @@ i32 main() { return app.run<Counter>(); }
   渡すので、値レシーバ（move）は使えない（コンパイルエラー）。`view` のレシーバは読むだけ。
 - **ノードの id はアプリに来ない。** 値の属性（`text={"clicks: %d", c.clicks}`）は状態を読み、
   ハンドラの後で runtime が違いだけを送る。
-- **DOM が持つテキストは部品で読む**：部品は `start` で作り（`ui.field()`、`ui.log()`）、要素に渡す
-  （`field={e.body}`、`log={t.out}`）。`TextField` の `read()` は次の `read` まで有効な `str` を
+- **DOM が持つテキストは部品で読む**：部品は `start` で作り（`ui.field()`、`ui.screen()`）、要素に渡す
+  （`field={e.body}`、`screen={t.screen}`）。`TextField` の `read()` は次の `read` まで有効な `str` を
   返す。サーバの中を指すポインタは返ってこない。
 - **省略できるプロパティ**: `x`/`y`（親原点）、`w`/`h`、`color`、`bold`、
   `gap`、`padding`、`onClick` 等は `elements.mln` のデフォルトが入る。`<Window>` に `x`/`y` は
@@ -95,11 +95,12 @@ i32 main() { return app.run<Counter>(); }
 | `@app` / `@app(single)` / `@app(name = "...")` / `@app(opens)` | `struct` に付けて型をアプリに。`single` は 2 回目の起動で既存ウィンドウを前面に、`opens` は他アプリの `ui.open(path)` を受ける |
 | `open(str path)` | `opens` のアプリが受けるパス。起動直後は `""` で呼ばれる |
 | `close()` | ユーザーがウィンドウを閉じた。後始末のあと runtime が EXIT を送り、MyOS が所有物を回収する |
+| `app.quit()` | ハンドラの中からアプリを終える。`close` は呼ばれない |
 | `@timer(ms)` | メソッドに付ける。周期的に呼ばれる |
 | `@key("Ctrl+S")` | メソッドに付ける。そのウィンドウがアクティブな間のショートカット |
 
 `src/apps/editor.dom.mln`（`single` + `opens` + `@key`）、`terminal.dom.mln`
-（`@timer` + `@key("Enter")` + `close`）、`files.dom.mln`（`List` と `Dialog`）が実例。
+（`<Terminal>` + `@timer` + `app.quit`）、`files.dom.mln`（`List` と `Dialog`）が実例。
 
 ## アプリが触れるもの
 
@@ -112,8 +113,11 @@ wire 上では **i32 と char\*** を使う。
 `Result` / `Option`をcopy-outする。`Node*`などserver内部のポインタは跨がない。
 この面は既にメッセージ／syscall の client stub として実装されている。
 
-- テキスト: `TextField`（`read`, `write`, `append`, `clear`, `focus`）, `TextLog`（`append`）。
+- テキスト: `TextField`（`read`, `write`, `append`, `clear`, `focus`）。
   ラベルの文字は `text={...}` の属性が状態から更新する
+- 端末: `<Terminal screen={...}>` は等幅の文字の格子。`terminal.spawn_bound(path, screen)` で
+  プロセスを載せると、その出力と、そのプロセスが起こしたプロセスの出力がここに出る。打った行は
+  最後に載ったプロセスの stdin へ行く。`Screen.write` はプロセスの出力と同じく書く
 - リストとダイアログ: `<List items={...} selected={...}>`、`<Dialog when={...}>`。項目も選択も
   出し入れも値で渡す。行の中のタブで列がそろう（n 個目のタブは行頭から 20px × n の位置へ移る）ので、
   見出しの `<Label>` と行に同じ数のタブを入れれば表になる
@@ -179,7 +183,7 @@ framework が独自 annotation を同じ表に混ぜても、各読み手は要�
 ```
 make build                                        # アプリは build/user/*.mbin → disk.img
 python3 system/MyOS/tests/app_framework_test.py   # launcher / single / @key / opens / close / dialog（make framework-test）
-python3 system/MyOS/tests/dom_click_test.py       # Counter と Notes の操作
+python3 system/MyOS/tests/dom_click_test.py       # Notes の操作
 python3 system/MyOS/tests/apps_e2e_test.py        # プロセス / エディタ / ファイラ
 ```
 

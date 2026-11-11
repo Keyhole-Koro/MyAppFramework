@@ -1,46 +1,52 @@
 package terminal;
 
-// MyAppFramework's UI-specific process integration: route a child process's
-// stdout to one of this app's TextAreas. Generic process control lives in
+// MyAppFramework's UI-specific process integration: start a process on one of
+// this app's Terminals. Generic process control lives in
 // MyStdLib/hosted/process.mln.
 //
-// A TextLog only grows for the app that holds it. The OS writes a child's
-// output to the log's node, so what needs that node happens here, and the app
-// hands over the log, never a node.
+// The OS writes a process's output to the Terminal's node and gives it the
+// lines typed there, so what needs that node happens here, and the app hands
+// over the screen, never a node.
 
 import runtime from "runtime/runtime.mln";
-import { TextLog } from "ui.mln";
+import { Screen } from "ui.mln";
 import myos_service from "@std/platform/myos/service.mln";
 import { OsService } from "@contracts/myos/services.contract.mln";
 import { Result } from "@std/core/result.mln";
-import { Text } from "@std/text/text.mln";
 import { SpawnError } from "@contracts/process/spawn.contract.mln";
 import { Pid, ProcessControlError } from "@contracts/process/control.contract.mln";
 import process from "@std/hosted/process.mln";
 import { ProcSpawnArgs, ProcBindArgs, ProcUnbindArgs } from "@contracts/myos/process-args.contract.mln";
 
-// Start it with its stdout already going to `log`: bound before it runs,
-// so its first output cannot slip past.
+/**
+ * Starts a program on `screen`: it writes there, and so do the programs it
+ * starts. A line typed there goes to whichever of them started last. It is on
+ * the screen before it runs, so its first output cannot slip past.
+ * @param path The program, as a path or a name looked up in /bin then /apps.
+ * @param screen The Terminal's screen.
+ * @return Its pid, or why it could not start.
+ */
 @safe
-export Result<Pid, SpawnError> spawn_bound(str path, TextLog log) {
+export Result<Pid, SpawnError> spawn_bound(str path, Screen screen) {
     Result<Pid, SpawnError> result;
     ProcSpawnArgs<Result<Pid, SpawnError>> args = ProcSpawnArgs<Result<Pid, SpawnError>> {
-        path: path.data, path_length: path.length, stdout_node: (i32)runtime.part_node((i32)log), result_out: &result
+        path: path.data, path_length: path.length, stdout_node: (i32)runtime.part_node((i32)screen), result_out: &result
     };
     myos_service.call(OsService::PROC_SPAWN, (i32)(&args));
     return result;
 }
 
-/** Sends a child's stdout to `log` from now on.
+/** Puts a child on `screen` from now on.
  * @return Ok(_), or Err(InvalidPid) when pid names no child of this process.
  */
 @safe
-export Result<_, ProcessControlError> bind(Pid pid, TextLog log) {
-    ProcBindArgs args = ProcBindArgs { pid: (i32)pid, output_node: (i32)runtime.part_node((i32)log) };
+export Result<_, ProcessControlError> bind(Pid pid, Screen screen) {
+    ProcBindArgs args = ProcBindArgs { pid: (i32)pid, output_node: (i32)runtime.part_node((i32)screen) };
     return process.control_result(pid, myos_service.call(OsService::PROC_BIND, (i32)(&args)));
 }
 
-/** Stops sending a child's stdout to its log.
+/** Takes a child off its screen: its output goes to the serial log, and it
+ * gets no typed lines.
  * @return Ok(_), or Err(InvalidPid) when pid names no child of this process.
  */
 @safe
@@ -48,7 +54,3 @@ export Result<_, ProcessControlError> unbind(Pid pid) {
     ProcUnbindArgs args = ProcUnbindArgs { pid: (i32)pid };
     return process.control_result(pid, myos_service.call(OsService::PROC_UNBIND, (i32)(&args)));
 }
-
-/** Empties `log`, as a shell's `clear` does. */
-@safe
-export void clear(TextLog log) { runtime.area_clear(runtime.part_node((i32)log)); }

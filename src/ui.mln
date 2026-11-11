@@ -45,15 +45,16 @@ export void (TextField f) clear() { runtime.input_set(runtime.part_node((i32)f),
 /** Moves the keyboard to the field. */
 export void (TextField f) focus() { runtime.focus(runtime.part_node((i32)f)); }
 
-/** Text the DOM keeps that only grows: a Terminal's output. An app gets one in
- * `start` and gives it to a TextArea with `log=`. */
-export newtype TextLog = i32;
+/** A Terminal's screen, which the processes started on it write to and take
+ * the typed lines of. An app gets one in `start` and gives it to a Terminal
+ * with `screen=`. */
+export newtype Screen = i32;
 
-/** A new log. */
-export TextLog log() { return TextLog(runtime.new_part()); }
+/** A new screen. */
+export Screen screen() { return Screen(runtime.new_part()); }
 
-/** Adds to the end of the log. */
-export void (TextLog l) append(str text) { runtime.area_append(runtime.part_node((i32)l), text); }
+/** Writes to the screen, as a process on it would. */
+export void (Screen s) write(str text) { runtime.area_append(runtime.part_node((i32)s), text); }
 
 // --- keys ---------------------------------------------------------------------------------------
 

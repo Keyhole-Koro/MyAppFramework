@@ -6,7 +6,7 @@ import { Request, EventKind } from "@contracts/myapp/message.contract.mln";
 import { Result } from "@std/core/result.mln";
 import { NodeId, UiError } from "@contracts/ui/widget.contract.mln";
 import ui from "ui.mln";
-import { TextField, TextLog } from "ui.mln";
+import { TextField, Screen } from "ui.mln";
 import { Text } from "@std/text/text.mln";
 import { Option } from "@std/core/option.mln";
 import str from "@std/text/str.mln";
@@ -311,10 +311,9 @@ export Result<NodeId, UiError> Timer(i32 interval, fn(i32 owner) -> void onTick)
 }
 
 /**
- * Lowers JSX `<TextArea name="..." field={...} log={...} text="..." x={...} y={...} w={...} h={...} capacity={...} readonly={...} onChange={...} testId="..." />`.
+ * Lowers JSX `<TextArea name="..." field={...} text="..." x={...} y={...} w={...} h={...} capacity={...} readonly={...} onChange={...} testId="..." />`.
  * @param name Node name identifier.
- * @param field The part that reads and writes the text (default none).
- * @param log The part that adds to the text (default none).
+ * @param field The part that reads, writes and adds to the text (default none).
  * @param text The text it starts with (default none).
  * @param x Logical X coordinate (default 0).
  * @param y Logical Y coordinate (default 0).
@@ -326,7 +325,7 @@ export Result<NodeId, UiError> Timer(i32 interval, fn(i32 owner) -> void onTick)
  * @param testId Stable automation locator id (default none).
  * @return DOM Node ID.
  */
-export Result<NodeId, UiError> TextArea(str name, TextField field = 0, TextLog log = 0, str text = "", i32 x = 0, i32 y = 0, i32 w = 300, i32 h = 200, i32 capacity = 1024, i32 readonly = 0, fn(i32 owner, str text) -> void onChange = 0, str testId = "") {
+export Result<NodeId, UiError> TextArea(str name, TextField field = 0, str text = "", i32 x = 0, i32 y = 0, i32 w = 300, i32 h = 200, i32 capacity = 1024, i32 readonly = 0, fn(i32 owner, str text) -> void onChange = 0, str testId = "") {
     Request request = runtime.ui_request(UiOp::CREATE_TEXT_AREA);
     request.a0 = x; request.a1 = y; request.a2 = w; request.a3 = h;
     request.a4 = capacity; request.a5 = readonly;
@@ -335,9 +334,38 @@ export Result<NodeId, UiError> TextArea(str name, TextField field = 0, TextLog l
     case result of {
         Ok(id) -> ({
             runtime.attach((i32)field, id);
-            runtime.attach((i32)log, id);
             if (!text.is_empty()) { runtime.area_append(id, text); }
             runtime.on_text((i32)id, EventKind::CHANGE, onChange);
+        });
+        Err(_) -> _;
+    };
+    return result;
+}
+
+/**
+ * Lowers JSX `<Terminal screen={...} x={...} y={...} w={...} h={...} capacity={...} focus={...} testId="..." />`.
+ * A grid of fixed-width cells: the processes started on its screen write to
+ * it, and a line typed on it goes to the one started last
+ * (`terminal.spawn_bound`).
+ * @param screen The part processes are started on (default none).
+ * @param x Logical X coordinate (default 0).
+ * @param y Logical Y coordinate (default 0).
+ * @param w Logical width (default 560).
+ * @param h Logical height (default 360).
+ * @param capacity Bytes of text it keeps; the oldest lines go first (default 8192).
+ * @param focus Whether the keyboard starts here (default false).
+ * @param testId Stable automation locator id (default none).
+ * @return DOM Node ID.
+ */
+export Result<NodeId, UiError> Terminal(Screen screen = 0, i32 x = 0, i32 y = 0, i32 w = 560, i32 h = 360, i32 capacity = 8192, bool focus = false, str testId = "") {
+    Request request = runtime.ui_request(UiOp::CREATE_TERMINAL);
+    request.a0 = x; request.a1 = y; request.a2 = w; request.a3 = h; request.a4 = capacity;
+    runtime.put_s1(&request, testId);
+    Result<NodeId, UiError> result = create(request);
+    case result of {
+        Ok(id) -> ({
+            runtime.attach((i32)screen, id);
+            if (focus) { runtime.focus(id); }
         });
         Err(_) -> _;
     };
@@ -464,7 +492,8 @@ export NodeId dom_TextInput(str placeholder, TextField field, i32 x, i32 y, i32 
 export NodeId dom_Checkbox(str text, i32 x, i32 y, bool checked, fn(i32 owner, bool on) -> void onChange, str testId) { return unwrap_node(Checkbox(text, x, y, checked, onChange, testId)); }
 export NodeId dom_Separator(i32 x, i32 y, i32 w) { return unwrap_node(Separator(x, y, w)); }
 export NodeId dom_Timer(i32 interval, fn(i32 owner) -> void onTick) { return unwrap_node(Timer(interval, onTick)); }
-export NodeId dom_TextArea(str name, TextField field, TextLog log, str text, i32 x, i32 y, i32 w, i32 h, i32 capacity, i32 readonly, fn(i32 owner, str text) -> void onChange, str testId) { return unwrap_node(TextArea(name, field, log, text, x, y, w, h, capacity, readonly, onChange, testId)); }
+export NodeId dom_TextArea(str name, TextField field, str text, i32 x, i32 y, i32 w, i32 h, i32 capacity, i32 readonly, fn(i32 owner, str text) -> void onChange, str testId) { return unwrap_node(TextArea(name, field, text, x, y, w, h, capacity, readonly, onChange, testId)); }
+export NodeId dom_Terminal(Screen screen, i32 x, i32 y, i32 w, i32 h, i32 capacity, bool focus, str testId) { return unwrap_node(Terminal(screen, x, y, w, h, capacity, focus, testId)); }
 export NodeId dom_List(str name, str items, Option<i32> selected, i32 x, i32 y, i32 w, i32 h, i32 capacity, bool focus, fn(i32 owner, i32 row) -> void onChange, fn(i32 owner, i32 row) -> void onActivate, str testId) { return unwrap_node(List(name, items, selected, x, y, w, h, capacity, focus, onChange, onActivate, testId)); }
 export NodeId dom_Graph(i32 x, i32 y, i32 w, i32 h, i32 samples, str fill, str line, str testId) { return unwrap_node(Graph(x, y, w, h, samples, fill, line, testId)); }
 export NodeId dom_Dialog(bool when, str title, str text, str confirm, str cancel, fn(i32 owner) -> void onConfirm, fn(i32 owner) -> void onCancel) { return unwrap_node(Dialog(when, title, text, confirm, cancel, onConfirm, onCancel)); }

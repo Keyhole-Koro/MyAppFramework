@@ -55,3 +55,8 @@ export i32 run<T: App>() {
         state.__view_update();
     }
 }
+
+/** Ends the app now, from inside a handler: its window goes and the process
+ * ends. `close` is not called, since the app asked. It does not return. */
+@safe
+export void quit() { runtime.exit(); }

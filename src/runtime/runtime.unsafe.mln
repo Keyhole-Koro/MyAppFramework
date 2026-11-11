@@ -556,14 +556,6 @@ export void area_append(NodeId id, str s) {
     send(&request);
 }
 
-/** Empties a TextArea. */
-@safe
-export void area_clear(NodeId id) {
-    Request request = ui_request(UiOp::AREA_CLEAR);
-    request.a0 = (i32)id;
-    send(&request);
-}
-
 /** Moves the keyboard to a node. */
 @safe
 export void focus(NodeId id) {

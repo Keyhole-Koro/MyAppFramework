@@ -1,7 +1,7 @@
 import assert from "@std/testing/assert.mln";
 import mock from "../../../toolchain/MyLangTestKit/runtime/facade.mln";
 import ui from "@app/ui.mln";
-import { TextField, TextLog } from "@app/ui.mln";
+import { TextField, Screen } from "@app/ui.mln";
 import elements from "@app/elements.mln";
 import app_transport from "@app/runtime/transport.mln";
 import app_allocator from "@app/runtime/allocator.mln";
@@ -189,9 +189,9 @@ void colours_are_packed_rgb() {
 /*@Test "a terminal binds a process to one of its nodes" { step: 1000000; }*/
 void a_terminal_binds_a_process_to_one_of_its_nodes() {
     mock.of(myos_service.call).when(mock.any(), mock.any()).call(recording_service);
-    TextLog log = ui.log();
-    runtime.attach((i32)log, NodeId(34));
-    assert.assert_true(terminal.bind(Pid(12), log).is_ok(), "an accepted bind says so");
+    Screen screen = ui.screen();
+    runtime.attach((i32)screen, NodeId(34));
+    assert.assert_true(terminal.bind(Pid(12), screen).is_ok(), "an accepted bind says so");
     assert.assert_true(g_service == OsService::PROC_BIND, "bind names the service");
     assert.assert_true(g_bound_pid == 12 && g_bound_node == 34, "bind carries the pid and the node");
 }
@@ -199,9 +199,9 @@ void a_terminal_binds_a_process_to_one_of_its_nodes() {
 /*@Test "a refusal reaches the app" { step: 5000000; }*/
 void a_refusal_reaches_the_app() {
     mock.of(myos_service.call).when(mock.any(), mock.any()).call(refusing_service);
-    TextLog log = ui.log();
-    runtime.attach((i32)log, NodeId(34));
-    assert.assert_true(terminal.bind(Pid(12), log).is_err(), "a refused bind");
+    Screen screen = ui.screen();
+    runtime.attach((i32)screen, NodeId(34));
+    assert.assert_true(terminal.bind(Pid(12), screen).is_err(), "a refused bind");
     assert.assert_true(g_service == OsService::PROC_BIND, "names its service");
     assert.assert_true(terminal.unbind(Pid(12)).is_err(), "a refused unbind");
     assert.assert_true(g_service == OsService::PROC_UNBIND, "names its service");
@@ -209,36 +209,46 @@ void a_refusal_reaches_the_app() {
     assert.assert_true(g_service == OsService::PROC_FEED, "names its service");
 }
 
-/*@Test "a log adds to its node and goes to a child by itself" { step: 5000000; }*/
-void a_log_adds_to_its_node_and_goes_to_a_child_by_itself() {
+/*@Test "a screen writes to its node and takes a child by itself" { step: 5000000; }*/
+void a_screen_writes_to_its_node_and_takes_a_child_by_itself() {
     mock.of(app_transport.request).when(mock.any()).call(recording_request);
     mock.of(myos_service.call).when(mock.any(), mock.any()).call(recording_spawn);
     g_requests = 0;
-    TextLog log = ui.log();
-    runtime.attach((i32)log, NodeId(6));
-    log.append("out");
-    expect_request(1, UiOp::AREA_APPEND, 6, "append");
-    assert.assert_true(g_last.s0_len == 3, "append carries the text");
-    terminal.clear(log);
-    expect_request(2, UiOp::AREA_CLEAR, 6, "clear");
-    terminal.spawn_bound("hello", log);
+    Screen screen = ui.screen();
+    runtime.attach((i32)screen, NodeId(6));
+    screen.write("out");
+    expect_request(1, UiOp::AREA_APPEND, 6, "write");
+    assert.assert_true(g_last.s0_len == 3, "write carries the text");
+    terminal.spawn_bound("hello", screen);
     assert.assert_true(g_service == OsService::PROC_SPAWN, "spawn_bound names the service");
-    assert.assert_true(g_spawn_node == 6, "spawn_bound carries the log's node");
+    assert.assert_true(g_spawn_node == 6, "spawn_bound carries the screen's node");
 }
 
-NodeId area_markup(TextField field, TextLog log) {
-    return <TextArea name="a" field={field} log={log} text="hi" />;
+NodeId terminal_markup(Screen screen) {
+    return <Terminal screen={screen} testId="t" />;
 }
 
-/*@Test "a text area takes its parts and its first text" { step: 5000000; }*/
-void a_text_area_takes_its_parts_and_its_first_text() {
+/*@Test "a terminal takes its screen" { step: 5000000; }*/
+void a_terminal_takes_its_screen() {
+    mock.of(app_transport.request).when(mock.any()).call(answering_request);
+    g_requests = 0;
+    Screen screen = ui.screen();
+    NodeId node = terminal_markup(screen);
+    assert.assert_true((i32)runtime.part_node((i32)screen) == (i32)node, "the screen names the terminal");
+    expect_request(1, UiOp::CREATE_TERMINAL, 0, "<Terminal>");
+}
+
+NodeId area_markup(TextField field) {
+    return <TextArea name="a" field={field} text="hi" />;
+}
+
+/*@Test "a text area takes its field and its first text" { step: 5000000; }*/
+void a_text_area_takes_its_field_and_its_first_text() {
     mock.of(app_transport.request).when(mock.any()).call(answering_request);
     g_requests = 0;
     TextField field = ui.field();
-    TextLog log = ui.log();
-    NodeId area = area_markup(field, log);
+    NodeId area = area_markup(field);
     assert.assert_true((i32)runtime.part_node((i32)field) == (i32)area, "the field names the area");
-    assert.assert_true((i32)runtime.part_node((i32)log) == (i32)area, "the log names the area");
     expect_request(2, UiOp::AREA_APPEND, (i32)area, "text");
     assert.assert_true(g_last.s0_len == 2, "text is added to the area");
 }
