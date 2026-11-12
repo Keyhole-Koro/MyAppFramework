@@ -11,6 +11,10 @@ import { Text } from "@std/text/text.mln";
 import { Option } from "@std/core/option.mln";
 import str from "@std/text/str.mln";
 
+// NodeStyle bits the elements set themselves (contracts' ADD_STYLE).
+const i32 WRAP = 256;
+const i32 REPORT_CARET = 512;
+
 // The markup vocabulary. `<Window title="A" x={0} w={400}>...</Window>` in a
 // .dom.mln source lowers to a call of the function of the same name, with
 // each property handed to the parameter of the same name and children passed
@@ -152,14 +156,24 @@ export Result<NodeId, UiError> Text(str text, i32 x = 0, i32 y = 0, str testId =
  * @param y Logical Y coordinate (default 0).
  * @param color Text color (RGB, 0 for default).
  * @param bold Non-zero for bold styling.
+ * @param anchor How it follows the window's size: ui.GROW_W, ui.GROW_H, ui.PIN_BOTTOM (default none).
  * @param testId Stable automation locator id (default none).
  * @return DOM Node ID.
  */
-export Result<NodeId, UiError> Label(str text, i32 x = 0, i32 y = 0, i32 color = 0, i32 bold = 0, str testId = "") {
+export Result<NodeId, UiError> Label(str text, i32 x = 0, i32 y = 0, i32 color = 0, i32 bold = 0, i32 anchor = 0, str testId = "") {
     Request request = runtime.ui_request(UiOp::CREATE_LABEL);
     request.a0 = x; request.a1 = y; request.a2 = color; request.a3 = bold;
     runtime.put_s0(&request, text); runtime.put_s1(&request, testId);
-    return create(request);
+    return anchored(create(request), anchor);
+}
+
+// A created node, given the NodeStyle bits of how it follows its window's size.
+Result<NodeId, UiError> anchored(Result<NodeId, UiError> created, i32 anchor) {
+    case created of {
+        Ok(id) -> runtime.add_style(id, anchor);
+        Err(_) -> _;
+    };
+    return created;
 }
 
 /**
@@ -170,14 +184,15 @@ export Result<NodeId, UiError> Label(str text, i32 x = 0, i32 y = 0, i32 color =
  * @param h Logical height (default 100).
  * @param background Background color (RGB, default 0).
  * @param border Border color (RGB, default 0).
+ * @param anchor How it follows the window's size: ui.GROW_W, ui.GROW_H, ui.PIN_BOTTOM (default none).
  * @return DOM Node ID.
  */
 export Result<NodeId, UiError> Box(i32 x = 0, i32 y = 0, i32 w = 100, i32 h = 100,
-               i32 background = 0, i32 border = 0) {
+               i32 background = 0, i32 border = 0, i32 anchor = 0) {
     Request request = runtime.ui_request(UiOp::CREATE_BOX);
     request.a0 = x; request.a1 = y; request.a2 = w; request.a3 = h;
     request.a4 = background; request.a5 = border;
-    return create(request);
+    return anchored(create(request), anchor);
 }
 
 /**
@@ -321,11 +336,15 @@ export Result<NodeId, UiError> Timer(i32 interval, fn(i32 owner) -> void onTick)
  * @param h Logical height (default 200).
  * @param capacity Buffer capacity in bytes (default 1024).
  * @param readonly Non-zero for read-only / display console mode (default 0).
+ * @param wrap Whether long lines break to fit its width (default false).
+ * @param anchor How it follows the window's size: ui.GROW_W, ui.GROW_H, ui.PIN_BOTTOM (default none).
  * @param onChange Called with the text when the user changes it (default none).
+ * @param onEdit Called when the user changes the text, without it: cheaper for a long text (default none).
+ * @param onCaret Called with the caret's line and column, from 1, when it moves (default none).
  * @param testId Stable automation locator id (default none).
  * @return DOM Node ID.
  */
-export Result<NodeId, UiError> TextArea(str name, TextField field = 0, str text = "", i32 x = 0, i32 y = 0, i32 w = 300, i32 h = 200, i32 capacity = 1024, i32 readonly = 0, fn(i32 owner, str text) -> void onChange = 0, str testId = "") {
+export Result<NodeId, UiError> TextArea(str name, TextField field = 0, str text = "", i32 x = 0, i32 y = 0, i32 w = 300, i32 h = 200, i32 capacity = 1024, i32 readonly = 0, bool wrap = false, i32 anchor = 0, fn(i32 owner, str text) -> void onChange = 0, fn(i32 owner) -> void onEdit = 0, fn(i32 owner, i32 line, i32 column) -> void onCaret = 0, str testId = "") {
     Request request = runtime.ui_request(UiOp::CREATE_TEXT_AREA);
     request.a0 = x; request.a1 = y; request.a2 = w; request.a3 = h;
     request.a4 = capacity; request.a5 = readonly;
@@ -335,7 +354,13 @@ export Result<NodeId, UiError> TextArea(str name, TextField field = 0, str text 
         Ok(id) -> ({
             runtime.attach((i32)field, id);
             if (!text.is_empty()) { runtime.area_append(id, text); }
+            i32 style = anchor;
+            if (wrap) { style = style | WRAP; }
+            if (onCaret != 0) { style = style | REPORT_CARET; }
+            runtime.add_style(id, style);
             runtime.on_text((i32)id, EventKind::CHANGE, onChange);
+            runtime.on_event((i32)id, EventKind::CHANGE, onEdit);
+            runtime.on_caret((i32)id, onCaret);
         });
         Err(_) -> _;
     };
@@ -354,10 +379,11 @@ export Result<NodeId, UiError> TextArea(str name, TextField field = 0, str text 
  * @param h Logical height (default 360).
  * @param capacity Bytes of text it keeps; the oldest lines go first (default 8192).
  * @param focus Whether the keyboard starts here (default false).
+ * @param anchor How it follows the window's size: ui.GROW_W, ui.GROW_H, ui.PIN_BOTTOM (default none).
  * @param testId Stable automation locator id (default none).
  * @return DOM Node ID.
  */
-export Result<NodeId, UiError> Terminal(Screen screen = 0, i32 x = 0, i32 y = 0, i32 w = 560, i32 h = 360, i32 capacity = 8192, bool focus = false, str testId = "") {
+export Result<NodeId, UiError> Terminal(Screen screen = 0, i32 x = 0, i32 y = 0, i32 w = 560, i32 h = 360, i32 capacity = 8192, bool focus = false, i32 anchor = 0, str testId = "") {
     Request request = runtime.ui_request(UiOp::CREATE_TERMINAL);
     request.a0 = x; request.a1 = y; request.a2 = w; request.a3 = h; request.a4 = capacity;
     runtime.put_s1(&request, testId);
@@ -365,7 +391,38 @@ export Result<NodeId, UiError> Terminal(Screen screen = 0, i32 x = 0, i32 y = 0,
     case result of {
         Ok(id) -> ({
             runtime.attach((i32)screen, id);
+            runtime.add_style(id, anchor);
             if (focus) { runtime.focus(id); }
+        });
+        Err(_) -> _;
+    };
+    return result;
+}
+
+/**
+ * Lowers JSX `<Menu title="..." items="..." x={...} y={...} w={...} h={...} onSelect={...} testId="..." />`.
+ * A button in a window's menu bar that opens a menu of its items below it.
+ * Picking one calls onSelect with its index. An item's tabs line shortcuts up
+ * in a column, as in a List.
+ * @param title The button's text.
+ * @param items The items, joined by newlines.
+ * @param x Logical X coordinate (default 0).
+ * @param y Logical Y coordinate (default 0).
+ * @param w Logical width (default 60).
+ * @param h Logical height (default 26).
+ * @param onSelect Called with the index of the item picked (default none).
+ * @param testId Stable automation locator id (default none).
+ * @return DOM Node ID.
+ */
+export Result<NodeId, UiError> Menu(str title, str items = "", i32 x = 0, i32 y = 0, i32 w = 60, i32 h = 26, fn(i32 owner, i32 index) -> void onSelect = 0, str testId = "") {
+    Request request = runtime.ui_request(UiOp::CREATE_MENU_BUTTON);
+    request.a0 = x; request.a1 = y; request.a2 = w; request.a3 = h;
+    runtime.put_s0(&request, title); runtime.put_s1(&request, testId);
+    Result<NodeId, UiError> result = create(request);
+    case result of {
+        Ok(id) -> ({
+            send_items(id, items);
+            runtime.on_row((i32)id, EventKind::CHANGE, onSelect);
         });
         Err(_) -> _;
     };
@@ -442,27 +499,39 @@ export Result<NodeId, UiError> Graph(i32 x = 0, i32 y = 0, i32 w = 300, i32 h = 
 }
 
 /**
- * Lowers JSX `<Dialog when={...} title="..." text="..." confirm="..." cancel="..." onConfirm={...} onCancel={...} />`.
+ * Lowers JSX `<Dialog when={...} title="..." text="..." confirm="..." cancel="..." other="..." w={...} h={...} onConfirm={...} onCancel={...} onOther={...}>...</Dialog>`.
  * A question in a window of its own, up while `when` is true. A handler ends
- * it by changing that state. Closing its window is cancelling.
+ * it by changing that state. Closing its window, or Esc, is cancelling, and
+ * Enter is confirming. Elements inside it go in its window, between the
+ * question at the top and the buttons along the bottom.
  * @param when Whether the dialog is up.
  * @param title Window title text.
  * @param text The question.
  * @param confirm Label of the button that answers yes (default "OK").
  * @param cancel Label of the button that answers no (default "Cancel").
+ * @param other Label of a third answer between them, say "Don't Save" (default none).
+ * @param w Logical width (default 340).
+ * @param h Logical height, title bar included (default 140).
  * @param onConfirm Called when the user answers yes (default none).
  * @param onCancel Called when the user answers no (default none).
+ * @param onOther Called when the user gives the third answer (default none).
  * @return DOM Node ID of its window.
  */
-export Result<NodeId, UiError> Dialog(bool when, str title, str text, str confirm = "OK", str cancel = "Cancel", fn(i32 owner) -> void onConfirm = 0, fn(i32 owner) -> void onCancel = 0) {
-    NodeId window = Window(title, 340, 140, "")?;
-    NodeId label = Label(text, 20, 16, 0, 0, "")?;
+export Result<NodeId, UiError> Dialog(bool when, str title, str text, str confirm = "OK", str cancel = "Cancel", str other = "", i32 w = 340, i32 h = 140, fn(i32 owner) -> void onConfirm = 0, fn(i32 owner) -> void onCancel = 0, fn(i32 owner) -> void onOther = 0) {
+    NodeId window = Window(title, w, h, "")?;
+    NodeId label = Label(text, 20, 16, 0, 0, 0, "")?;
     append_child(window, label)?;
-    NodeId row = Row(20, 60, 300, 34, 0, 10)?;
+    // The buttons sit along the bottom: the window's h includes its title bar.
+    NodeId row = Row(20, h - 80, w - 40, 34, 0, 10)?;
     append_child(window, row)?;
-    NodeId yes = PrimaryButton(confirm, 0, 0, 110, 34, 0, "")?;
+    NodeId yes = PrimaryButton(confirm, 0, 0, 100, 34, 0, "")?;
     append_child(row, yes)?;
-    NodeId no = Button(cancel, 0, 0, 110, 34, 0, "")?;
+    if (!other.is_empty()) {
+        NodeId third = Button(other, 0, 0, 100, 34, 0, "")?;
+        append_child(row, third)?;
+        runtime.on_event((i32)third, EventKind::CLICK, onOther);
+    }
+    NodeId no = Button(cancel, 0, 0, 100, 34, 0, "")?;
     append_child(row, no)?;
     runtime.on_event((i32)yes, EventKind::CLICK, onConfirm);
     runtime.on_event((i32)no, EventKind::CLICK, onCancel);
@@ -483,8 +552,8 @@ export NodeId dom_Window(str title, i32 w, i32 h, str testId) { return unwrap_no
 export NodeId dom_Button(str text, i32 x, i32 y, i32 w, i32 h, fn(i32 owner) -> void onClick, str testId) { return unwrap_node(Button(text, x, y, w, h, onClick, testId)); }
 export NodeId dom_PrimaryButton(str text, i32 x, i32 y, i32 w, i32 h, fn(i32 owner) -> void onClick, str testId) { return unwrap_node(PrimaryButton(text, x, y, w, h, onClick, testId)); }
 export NodeId dom_Text(str text, i32 x, i32 y, str testId) { return unwrap_node(Text(text, x, y, testId)); }
-export NodeId dom_Label(str text, i32 x, i32 y, i32 color, i32 bold, str testId) { return unwrap_node(Label(text, x, y, color, bold, testId)); }
-export NodeId dom_Box(i32 x, i32 y, i32 w, i32 h, i32 background, i32 border) { return unwrap_node(Box(x, y, w, h, background, border)); }
+export NodeId dom_Label(str text, i32 x, i32 y, i32 color, i32 bold, i32 anchor, str testId) { return unwrap_node(Label(text, x, y, color, bold, anchor, testId)); }
+export NodeId dom_Box(i32 x, i32 y, i32 w, i32 h, i32 background, i32 border, i32 anchor) { return unwrap_node(Box(x, y, w, h, background, border, anchor)); }
 export NodeId dom_Panel(i32 x, i32 y, i32 w, i32 h, i32 radius) { return unwrap_node(Panel(x, y, w, h, radius)); }
 export NodeId dom_Column(i32 x, i32 y, i32 w, i32 h, i32 padding, i32 gap) { return unwrap_node(Column(x, y, w, h, padding, gap)); }
 export NodeId dom_Row(i32 x, i32 y, i32 w, i32 h, i32 padding, i32 gap) { return unwrap_node(Row(x, y, w, h, padding, gap)); }
@@ -492,11 +561,12 @@ export NodeId dom_TextInput(str placeholder, TextField field, i32 x, i32 y, i32 
 export NodeId dom_Checkbox(str text, i32 x, i32 y, bool checked, fn(i32 owner, bool on) -> void onChange, str testId) { return unwrap_node(Checkbox(text, x, y, checked, onChange, testId)); }
 export NodeId dom_Separator(i32 x, i32 y, i32 w) { return unwrap_node(Separator(x, y, w)); }
 export NodeId dom_Timer(i32 interval, fn(i32 owner) -> void onTick) { return unwrap_node(Timer(interval, onTick)); }
-export NodeId dom_TextArea(str name, TextField field, str text, i32 x, i32 y, i32 w, i32 h, i32 capacity, i32 readonly, fn(i32 owner, str text) -> void onChange, str testId) { return unwrap_node(TextArea(name, field, text, x, y, w, h, capacity, readonly, onChange, testId)); }
-export NodeId dom_Terminal(Screen screen, i32 x, i32 y, i32 w, i32 h, i32 capacity, bool focus, str testId) { return unwrap_node(Terminal(screen, x, y, w, h, capacity, focus, testId)); }
+export NodeId dom_TextArea(str name, TextField field, str text, i32 x, i32 y, i32 w, i32 h, i32 capacity, i32 readonly, bool wrap, i32 anchor, fn(i32 owner, str text) -> void onChange, fn(i32 owner) -> void onEdit, fn(i32 owner, i32 line, i32 column) -> void onCaret, str testId) { return unwrap_node(TextArea(name, field, text, x, y, w, h, capacity, readonly, wrap, anchor, onChange, onEdit, onCaret, testId)); }
+export NodeId dom_Terminal(Screen screen, i32 x, i32 y, i32 w, i32 h, i32 capacity, bool focus, i32 anchor, str testId) { return unwrap_node(Terminal(screen, x, y, w, h, capacity, focus, anchor, testId)); }
+export NodeId dom_Menu(str title, str items, i32 x, i32 y, i32 w, i32 h, fn(i32 owner, i32 index) -> void onSelect, str testId) { return unwrap_node(Menu(title, items, x, y, w, h, onSelect, testId)); }
 export NodeId dom_List(str name, str items, Option<i32> selected, i32 x, i32 y, i32 w, i32 h, i32 capacity, bool focus, fn(i32 owner, i32 row) -> void onChange, fn(i32 owner, i32 row) -> void onActivate, str testId) { return unwrap_node(List(name, items, selected, x, y, w, h, capacity, focus, onChange, onActivate, testId)); }
 export NodeId dom_Graph(i32 x, i32 y, i32 w, i32 h, i32 samples, str fill, str line, str testId) { return unwrap_node(Graph(x, y, w, h, samples, fill, line, testId)); }
-export NodeId dom_Dialog(bool when, str title, str text, str confirm, str cancel, fn(i32 owner) -> void onConfirm, fn(i32 owner) -> void onCancel) { return unwrap_node(Dialog(when, title, text, confirm, cancel, onConfirm, onCancel)); }
+export NodeId dom_Dialog(bool when, str title, str text, str confirm, str cancel, str other, i32 w, i32 h, fn(i32 owner) -> void onConfirm, fn(i32 owner) -> void onCancel, fn(i32 owner) -> void onOther) { return unwrap_node(Dialog(when, title, text, confirm, cancel, other, w, h, onConfirm, onCancel, onOther)); }
 
 // --- what follows the state ------------------------------------------------------------
 
@@ -511,6 +581,10 @@ void send_text(NodeId id, str value) {
     request.a0 = (i32)id;
     runtime.put_s0(&request, value);
     runtime.send(&request);
+}
+
+export void Window_title(i32 slot, str value) {
+    if (runtime.text_changed(slot, value)) { send_text(runtime.bound(slot), value); }
 }
 
 export void Label_text(i32 slot, str value) {

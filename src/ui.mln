@@ -79,6 +79,12 @@ export const i32 TEXT_SECONDARY = 0x6B7280; // hints, captions, status lines
 export const i32 TEXT_DISABLED = 0xA0A6B0;  // unavailable items
 export const i32 ACCENT = 0x3B82F6;         // highlights and primary actions
 export const i32 GRAPH_SECOND = 0xF59E0B;   // a Graph's `line` series
+export const i32 MENU_BAR = 0xEEF0F3;       // the strip a window's menus sit on
+
+// How an element follows its window's size, for `anchor=` (OR them together).
+export const i32 GROW_W = 32;      // it widens and narrows with the window
+export const i32 GROW_H = 64;      // it grows and shrinks with the window's height
+export const i32 PIN_BOTTOM = 128; // it keeps its distance from the window's bottom edge
 
 // --- other apps ---------------------------------------------------------------------------------
 

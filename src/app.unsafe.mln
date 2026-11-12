@@ -21,12 +21,15 @@ export typedef NodeId View;
  * - view: what the state looks like. It only reads the state; markup is
  *   what it returns.
  * - open: a path sent by another app, or "" after a launch that had none.
+ * - can_close: the user asked to close the window. Answering false keeps it,
+ *   say to ask about unsaved work first, and the app may quit() later.
  * - close: the window is closing and the process ends after this.
  */
 export trait App {
     Self start();
     View (Self self) view();
     void (borrow Self self) open(str path) { }
+    bool (borrow Self self) can_close() { return true; }
     void (borrow Self self) close() { }
 }
 
@@ -48,7 +51,7 @@ export i32 run<T: App>() {
             continue;
         }
         if (step == Step::Open) { state.open(runtime.opened_path()); }
-        if (step == Step::Close) {
+        if (step == Step::Close && state.can_close()) {
             state.close();
             runtime.exit();
         }

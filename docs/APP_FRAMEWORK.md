@@ -94,13 +94,14 @@ i32 main() { return app.run<Counter>(); }
 | --- | --- |
 | `@app` / `@app(single)` / `@app(name = "...")` / `@app(opens)` | `struct` に付けて型をアプリに。`single` は 2 回目の起動で既存ウィンドウを前面に、`opens` は他アプリの `ui.open(path)` を受ける |
 | `open(str path)` | `opens` のアプリが受けるパス。起動直後は `""` で呼ばれる |
+| `can_close()` | ユーザーがウィンドウを閉じようとした。false ならウィンドウは残る（保存していない変更を先に尋ねるなど） |
 | `close()` | ユーザーがウィンドウを閉じた。後始末のあと runtime が EXIT を送り、MyOS が所有物を回収する |
 | `app.quit()` | ハンドラの中からアプリを終える。`close` は呼ばれない |
 | `@timer(ms)` | メソッドに付ける。周期的に呼ばれる |
 | `@key("Ctrl+S")` | メソッドに付ける。そのウィンドウがアクティブな間のショートカット |
 
-`src/apps/editor.dom.mln`（`single` + `opens` + `@key`）、`terminal.dom.mln`
-（`<Terminal>` + `@timer` + `app.quit`）、`files.dom.mln`（`List` と `Dialog`）が実例。
+`src/apps/editor.dom.mln`（`single` + `opens` + `@key` + `<Menu>` + 中に部品のある `Dialog` + `can_close`）、
+`terminal.dom.mln`（`<Terminal>` + `@timer` + `app.quit`）、`files.dom.mln`（`List` と `Dialog`）が実例。
 
 ## アプリが触れるもの
 
@@ -113,7 +114,15 @@ wire 上では **i32 と char\*** を使う。
 `Result` / `Option`をcopy-outする。`Node*`などserver内部のポインタは跨がない。
 この面は既にメッセージ／syscall の client stub として実装されている。
 
-- テキスト: `TextField`（`read`, `write`, `append`, `clear`, `focus`）。
+- テキスト: `TextField`（`read`, `write`, `append`, `clear`, `focus`）。`<TextArea>` は `wrap={true}` で
+  長い行を幅で折り返し、`onEdit` は中身を読まずに変わったことだけを、`onCaret` はキャレットの行と列
+  （1 から）を受ける
+- メニュー: `<Menu title="File" items="New\nOpen..." onSelect={...}>` はメニューバーのボタン。押すと
+  項目のメニューが下に開き、選んだ項目の番号が `onSelect` に来る。項目の中のタブで、ショートカットの
+  列をそろえられる
+- ウィンドウの大きさへの追従: `anchor={ui.GROW_W | ui.GROW_H}` で一緒に伸び縮みし、`ui.PIN_BOTTOM` で
+  下端からの距離を保つ（`Box`, `Label`, `TextArea`, `Terminal`）。`<Window title={...}>` は状態に
+  ついて変わる
   ラベルの文字は `text={...}` の属性が状態から更新する
 - 端末: `<Terminal screen={...}>` は等幅の文字の格子。`terminal.spawn_bound(path, screen)` で
   プロセスを載せると、その出力と、そのプロセスが起こしたプロセスの出力がここに出る。打った行は
@@ -121,7 +130,8 @@ wire 上では **i32 と char\*** を使う。
 - リストとダイアログ: `<List items={...} selected={...}>`、`<Dialog when={...}>`。項目も選択も
   出し入れも値で渡す。行の中のタブで列がそろう（n 個目のタブは行頭から 20px × n の位置へ移る）ので、
   見出しの `<Label>` と行に同じ数のタブを入れれば表になる。`<Dialog>` が出ている間、アプリの
-  ウィンドウはクリックを受けない。Esc は `onCancel`、Enter は `onConfirm` になる
+  ウィンドウはクリックを受けない。Esc は `onCancel`、Enter は `onConfirm` になる。`other=` で 3 つ目の
+  答え（`onOther`）、`w=` と `h=` で大きさを決め、中に書いた要素は問いとボタンの間に入る
 - グラフ: `<Graph fill={...} line={...} samples={60}>`。0〜100 の百分率を空白区切りで古い順に渡す。
   `fill` は塗りつぶし、`line` はその上の 2 本目の線（色は `ui.GRAPH_SECOND`）。新しい値が右端
 - 他アプリ: `ui.open(path)` → `opens` を持つアプリへ
@@ -184,7 +194,7 @@ framework が独自 annotation を同じ表に混ぜても、各読み手は要�
 ```
 make build                                        # アプリは build/user/*.mbin → disk.img
 python3 system/MyOS/tests/app_framework_test.py   # launcher / single / @key / opens / close / dialog（make framework-test）
-python3 system/MyOS/tests/dom_click_test.py       # Notes の操作
+python3 system/MyOS/tests/dom_click_test.py       # Editor のメニュー、入力、キャレット
 python3 system/MyOS/tests/apps_e2e_test.py        # プロセス / エディタ / ファイラ
 ```
 

@@ -85,6 +85,7 @@ enum HandlerShape {
     FLAG,   // (bool on)
     TEXT,   // (str text), read from the node
     ROW,    // (i32 row)
+    CARET,  // (i32 line, i32 column), packed in the event as line << 16 | column
 }
 
 struct Handler {
@@ -118,6 +119,12 @@ export void on_text(i32 key, EventKind kind, fn(i32 owner, str text) -> void cal
 @safe
 export void on_row(i32 key, EventKind kind, fn(i32 owner, i32 row) -> void callback) {
     add_handler(key, kind, HandlerShape::ROW, (fn(i32 owner) -> void)callback);
+}
+
+/** Registers a handler of a caret that moved: its line and column, from 1. */
+@safe
+export void on_caret(i32 key, fn(i32 owner, i32 line, i32 column) -> void callback) {
+    add_handler(key, EventKind::CARET, HandlerShape::CARET, (fn(i32 owner) -> void)callback);
 }
 
 void add_handler(i32 key, EventKind kind, HandlerShape shape, fn(i32 owner) -> void callback) {
@@ -154,6 +161,11 @@ void call_handler(i32 row, Event *ev) {
     if (handlers[row].shape == HandlerShape::ROW) {
         fn(i32 owner, i32 row) -> void selected = (fn(i32 owner, i32 row) -> void)callback;
         selected(current_owner, ev->arg);
+        return;
+    }
+    if (handlers[row].shape == HandlerShape::CARET) {
+        fn(i32 owner, i32 line, i32 column) -> void moved = (fn(i32 owner, i32 line, i32 column) -> void)callback;
+        moved(current_owner, ev->arg >> 16, ev->arg & 0xFFFF);
         return;
     }
     callback(current_owner);
@@ -539,6 +551,17 @@ export void start_annotations() {
 
 // What the framework does to a node for an app. An app holds parts, never nodes,
 // so these stay out of ui.mln.
+
+/** Adds NodeStyle bits an app may set (UiOp::ADD_STYLE): following the
+ * window's size, a TextArea's wrapping, reporting its caret. */
+@safe
+export void add_style(NodeId id, i32 bits) {
+    if (bits == 0) { return; }
+    Request request = ui_request(UiOp::ADD_STYLE);
+    request.a0 = (i32)id;
+    request.a1 = bits;
+    send(&request);
+}
 
 /** Replaces the text of a TextInput or TextArea. */
 @safe
