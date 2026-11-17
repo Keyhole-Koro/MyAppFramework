@@ -218,14 +218,15 @@ export Result<NodeId, UiError> Panel(i32 x = 0, i32 y = 0, i32 w = 100, i32 h = 
  * @param h Logical height (default 100).
  * @param padding Inset padding in logical pixels (default 0).
  * @param gap Gap between children in logical pixels (default 0).
+ * @param anchor How it follows the window's size: ui.GROW_W, ui.GROW_H, ui.PIN_BOTTOM (default none).
  * @return DOM Node ID.
  */
 export Result<NodeId, UiError> Column(i32 x = 0, i32 y = 0, i32 w = 100, i32 h = 100,
-                  i32 padding = 0, i32 gap = 0) {
+                  i32 padding = 0, i32 gap = 0, i32 anchor = 0) {
     Request request = runtime.ui_request(UiOp::CREATE_COLUMN);
     request.a0 = x; request.a1 = y; request.a2 = w; request.a3 = h;
     request.a4 = padding; request.a5 = gap;
-    return create(request);
+    return anchored(create(request), anchor);
 }
 
 /**
@@ -236,14 +237,15 @@ export Result<NodeId, UiError> Column(i32 x = 0, i32 y = 0, i32 w = 100, i32 h =
  * @param h Logical height (default 34).
  * @param padding Inset padding in logical pixels (default 0).
  * @param gap Gap between children in logical pixels (default 0).
+ * @param anchor How it follows the window's size: ui.GROW_W, ui.GROW_H, ui.PIN_BOTTOM (default none).
  * @return DOM Node ID.
  */
 export Result<NodeId, UiError> Row(i32 x = 0, i32 y = 0, i32 w = 100, i32 h = 34,
-               i32 padding = 0, i32 gap = 0) {
+               i32 padding = 0, i32 gap = 0, i32 anchor = 0) {
     Request request = runtime.ui_request(UiOp::CREATE_ROW);
     request.a0 = x; request.a1 = y; request.a2 = w; request.a3 = h;
     request.a4 = padding; request.a5 = gap;
-    return create(request);
+    return anchored(create(request), anchor);
 }
 
 /**
@@ -442,18 +444,20 @@ export Result<NodeId, UiError> Menu(str title, str items = "", i32 x = 0, i32 y 
  * @param h Logical height (default 200).
  * @param capacity Buffer capacity in bytes (default 1024).
  * @param focus Whether the keyboard starts here (default false).
+ * @param anchor How it follows the window's size: ui.GROW_W, ui.GROW_H, ui.PIN_BOTTOM (default none).
  * @param onChange Called with the row the user selected (default none).
  * @param onActivate Called with the row the user activated (default none).
  * @param testId Stable automation locator id (default none).
  * @return DOM Node ID.
  */
-export Result<NodeId, UiError> List(str name, str items = "", Option<i32> selected = None, i32 x = 0, i32 y = 0, i32 w = 300, i32 h = 200, i32 capacity = 1024, bool focus = false, fn(i32 owner, i32 row) -> void onChange = 0, fn(i32 owner, i32 row) -> void onActivate = 0, str testId = "") {
+export Result<NodeId, UiError> List(str name, str items = "", Option<i32> selected = None, i32 x = 0, i32 y = 0, i32 w = 300, i32 h = 200, i32 capacity = 1024, bool focus = false, i32 anchor = 0, fn(i32 owner, i32 row) -> void onChange = 0, fn(i32 owner, i32 row) -> void onActivate = 0, str testId = "") {
     Request request = runtime.ui_request(UiOp::CREATE_LIST);
     request.a0 = x; request.a1 = y; request.a2 = w; request.a3 = h; request.a4 = capacity;
     runtime.put_s0(&request, name); runtime.put_s1(&request, testId);
     Result<NodeId, UiError> result = create(request);
     case result of {
         Ok(id) -> ({
+            runtime.add_style(id, anchor);
             runtime.on_row((i32)id, EventKind::CHANGE, onChange);
             runtime.on_row((i32)id, EventKind::ACTIVATE, onActivate);
             if (!items.is_empty()) { send_items(id, items); }
@@ -480,16 +484,18 @@ export Result<NodeId, UiError> List(str name, str items = "", Option<i32> select
  * @param samples How many samples span the width, 2 to 120 (default 60).
  * @param fill The filled series (default none).
  * @param line The second series (default none).
+ * @param anchor How it follows the window's size: ui.GROW_W, ui.GROW_H, ui.PIN_BOTTOM (default none).
  * @param testId Stable automation locator id (default none).
  * @return DOM Node ID.
  */
-export Result<NodeId, UiError> Graph(i32 x = 0, i32 y = 0, i32 w = 300, i32 h = 120, i32 samples = 60, str fill = "", str line = "", str testId = "") {
+export Result<NodeId, UiError> Graph(i32 x = 0, i32 y = 0, i32 w = 300, i32 h = 120, i32 samples = 60, str fill = "", str line = "", i32 anchor = 0, str testId = "") {
     Request request = runtime.ui_request(UiOp::CREATE_GRAPH);
     request.a0 = x; request.a1 = y; request.a2 = w; request.a3 = h; request.a4 = samples;
     runtime.put_s1(&request, testId);
     Result<NodeId, UiError> result = create(request);
     case result of {
         Ok(id) -> ({
+            runtime.add_style(id, anchor);
             if (!fill.is_empty()) { send_series(id, 0, fill); }
             if (!line.is_empty()) { send_series(id, 1, line); }
         });
@@ -555,8 +561,8 @@ export NodeId dom_Text(str text, i32 x, i32 y, str testId) { return unwrap_node(
 export NodeId dom_Label(str text, i32 x, i32 y, i32 color, i32 bold, i32 anchor, str testId) { return unwrap_node(Label(text, x, y, color, bold, anchor, testId)); }
 export NodeId dom_Box(i32 x, i32 y, i32 w, i32 h, i32 background, i32 border, i32 anchor) { return unwrap_node(Box(x, y, w, h, background, border, anchor)); }
 export NodeId dom_Panel(i32 x, i32 y, i32 w, i32 h, i32 radius) { return unwrap_node(Panel(x, y, w, h, radius)); }
-export NodeId dom_Column(i32 x, i32 y, i32 w, i32 h, i32 padding, i32 gap) { return unwrap_node(Column(x, y, w, h, padding, gap)); }
-export NodeId dom_Row(i32 x, i32 y, i32 w, i32 h, i32 padding, i32 gap) { return unwrap_node(Row(x, y, w, h, padding, gap)); }
+export NodeId dom_Column(i32 x, i32 y, i32 w, i32 h, i32 padding, i32 gap, i32 anchor) { return unwrap_node(Column(x, y, w, h, padding, gap, anchor)); }
+export NodeId dom_Row(i32 x, i32 y, i32 w, i32 h, i32 padding, i32 gap, i32 anchor) { return unwrap_node(Row(x, y, w, h, padding, gap, anchor)); }
 export NodeId dom_TextInput(str placeholder, TextField field, i32 x, i32 y, i32 w, i32 h, i32 capacity, bool focus, fn(i32 owner, str text) -> void onChange, str testId) { return unwrap_node(TextInput(placeholder, field, x, y, w, h, capacity, focus, onChange, testId)); }
 export NodeId dom_Checkbox(str text, i32 x, i32 y, bool checked, fn(i32 owner, bool on) -> void onChange, str testId) { return unwrap_node(Checkbox(text, x, y, checked, onChange, testId)); }
 export NodeId dom_Separator(i32 x, i32 y, i32 w) { return unwrap_node(Separator(x, y, w)); }
@@ -564,8 +570,8 @@ export NodeId dom_Timer(i32 interval, fn(i32 owner) -> void onTick) { return unw
 export NodeId dom_TextArea(str name, TextField field, str text, i32 x, i32 y, i32 w, i32 h, i32 capacity, i32 readonly, bool wrap, i32 anchor, fn(i32 owner, str text) -> void onChange, fn(i32 owner) -> void onEdit, fn(i32 owner, i32 line, i32 column) -> void onCaret, str testId) { return unwrap_node(TextArea(name, field, text, x, y, w, h, capacity, readonly, wrap, anchor, onChange, onEdit, onCaret, testId)); }
 export NodeId dom_Terminal(Screen screen, i32 x, i32 y, i32 w, i32 h, i32 capacity, bool focus, i32 anchor, str testId) { return unwrap_node(Terminal(screen, x, y, w, h, capacity, focus, anchor, testId)); }
 export NodeId dom_Menu(str title, str items, i32 x, i32 y, i32 w, i32 h, fn(i32 owner, i32 index) -> void onSelect, str testId) { return unwrap_node(Menu(title, items, x, y, w, h, onSelect, testId)); }
-export NodeId dom_List(str name, str items, Option<i32> selected, i32 x, i32 y, i32 w, i32 h, i32 capacity, bool focus, fn(i32 owner, i32 row) -> void onChange, fn(i32 owner, i32 row) -> void onActivate, str testId) { return unwrap_node(List(name, items, selected, x, y, w, h, capacity, focus, onChange, onActivate, testId)); }
-export NodeId dom_Graph(i32 x, i32 y, i32 w, i32 h, i32 samples, str fill, str line, str testId) { return unwrap_node(Graph(x, y, w, h, samples, fill, line, testId)); }
+export NodeId dom_List(str name, str items, Option<i32> selected, i32 x, i32 y, i32 w, i32 h, i32 capacity, bool focus, i32 anchor, fn(i32 owner, i32 row) -> void onChange, fn(i32 owner, i32 row) -> void onActivate, str testId) { return unwrap_node(List(name, items, selected, x, y, w, h, capacity, focus, anchor, onChange, onActivate, testId)); }
+export NodeId dom_Graph(i32 x, i32 y, i32 w, i32 h, i32 samples, str fill, str line, i32 anchor, str testId) { return unwrap_node(Graph(x, y, w, h, samples, fill, line, anchor, testId)); }
 export NodeId dom_Dialog(bool when, str title, str text, str confirm, str cancel, str other, i32 w, i32 h, fn(i32 owner) -> void onConfirm, fn(i32 owner) -> void onCancel, fn(i32 owner) -> void onOther) { return unwrap_node(Dialog(when, title, text, confirm, cancel, other, w, h, onConfirm, onCancel, onOther)); }
 
 // --- what follows the state ------------------------------------------------------------

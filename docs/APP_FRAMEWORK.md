@@ -93,6 +93,7 @@ i32 main() { return app.run<Counter>(); }
 | 書くもの | 意味 |
 | --- | --- |
 | `@app` / `@app(single)` / `@app(name = "...")` / `@app(opens)` | `struct` に付けて型をアプリに。`single` は 2 回目の起動で既存ウィンドウを前面に、`opens` は他アプリの `ui.open(path)` を受ける |
+| `@icon("terminal")` | `@app` の `struct` に並べて付け、ランチャーとタスクバーのアイコンを名前で選ぶ（`terminal`, `editor`, `files`, `tasks`。無ければ窓の形の `app`）。`@app` の引数は 3 つまでなので別の注釈にしている |
 | `open(str path)` | `opens` のアプリが受けるパス。起動直後は `""` で呼ばれる |
 | `can_close()` | ユーザーがウィンドウを閉じようとした。false ならウィンドウは残る（保存していない変更を先に尋ねるなど） |
 | `close()` | ユーザーがウィンドウを閉じた。後始末のあと runtime が EXIT を送り、MyOS が所有物を回収する |
@@ -114,14 +115,15 @@ wire 上では **i32 と char\*** を使う。
 `Result` / `Option`をcopy-outする。`Node*`などserver内部のポインタは跨がない。
 この面は既にメッセージ／syscall の client stub として実装されている。
 
-- テキスト: `TextField`（`read`, `write`, `append`, `clear`, `focus`）。`<TextArea>` は `wrap={true}` で
+- テキスト: `TextField`（`read`, `write`, `append`, `clear`, `focus`、Edit メニュー用の `cut`, `copy`, `paste`, `select_all`）。
+  選択とクリップボードは OS が持ち、Ctrl+X・C・V・A はアプリにコードが無くても欄で働く。`<TextArea>` は `wrap={true}` で
   長い行を幅で折り返し、`onEdit` は中身を読まずに変わったことだけを、`onCaret` はキャレットの行と列
   （1 から）を受ける
 - メニュー: `<Menu title="File" items="New\nOpen..." onSelect={...}>` はメニューバーのボタン。押すと
   項目のメニューが下に開き、選んだ項目の番号が `onSelect` に来る。項目の中のタブで、ショートカットの
   列をそろえられる
 - ウィンドウの大きさへの追従: `anchor={ui.GROW_W | ui.GROW_H}` で一緒に伸び縮みし、`ui.PIN_BOTTOM` で
-  下端からの距離を保つ（`Box`, `Label`, `TextArea`, `Terminal`）。`<Window title={...}>` は状態に
+  下端からの距離を保つ（`Box`, `Label`, `TextArea`, `Terminal`, `List`, `Row`, `Column`, `Graph`）。`<Window title={...}>` は状態に
   ついて変わる
   ラベルの文字は `text={...}` の属性が状態から更新する
 - 端末: `<Terminal screen={...}>` は等幅の文字の格子。`terminal.spawn_bound(path, screen)` で

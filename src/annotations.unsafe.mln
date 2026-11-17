@@ -30,6 +30,11 @@ package annotations;
 // `opens`: it takes the paths other apps hand to ui.open(), in App's `open`.
 export void app(bool single = false, char *name = "", bool opens = false);
 
+// On an @app struct: its icon in the launcher and the taskbar, by name:
+// "terminal", "editor", "files", "tasks" (contracts/ui/icon.contract.mln).
+// Without it an app shows the plain window icon, "app".
+export void icon(char *name);
+
 // The method, every `ms` milliseconds while the app runs.
 export void timer(i32 ms);
 

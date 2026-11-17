@@ -4,7 +4,7 @@ import runtime from "runtime/runtime.mln";
 import str from "@std/text/str.mln";
 import ascii from "@std/text/ascii.mln";
 import { Result } from "@std/core/result.mln";
-import { UiOp } from "@contracts/myapp/ui.contract.mln";
+import { UiOp, TextEdit } from "@contracts/myapp/ui.contract.mln";
 import { AppOp, AppError } from "@contracts/myapp/lifecycle.contract.mln";
 import { Request } from "@contracts/myapp/message.contract.mln";
 
@@ -44,6 +44,21 @@ export void (TextField f) clear() { runtime.input_set(runtime.part_node((i32)f),
 
 /** Moves the keyboard to the field. */
 export void (TextField f) focus() { runtime.focus(runtime.part_node((i32)f)); }
+
+// What an Edit menu does, the same as the field's keys. The clipboard is the
+// OS's: an app never reads it, and gets its text only by pasting into a field.
+
+/** Moves the selected text to the clipboard (Ctrl+X). */
+export void (TextField f) cut() { runtime.text_edit(runtime.part_node((i32)f), TextEdit::CUT); }
+
+/** Copies the selected text to the clipboard (Ctrl+C). */
+export void (TextField f) copy() { runtime.text_edit(runtime.part_node((i32)f), TextEdit::COPY); }
+
+/** Puts the clipboard's text in place of the selection (Ctrl+V). */
+export void (TextField f) paste() { runtime.text_edit(runtime.part_node((i32)f), TextEdit::PASTE); }
+
+/** Selects all the text (Ctrl+A). */
+export void (TextField f) select_all() { runtime.text_edit(runtime.part_node((i32)f), TextEdit::SELECT_ALL); }
 
 /** A Terminal's screen, which the processes started on it write to and take
  * the typed lines of. An app gets one in `start` and gives it to a Terminal

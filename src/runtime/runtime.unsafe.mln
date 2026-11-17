@@ -563,6 +563,16 @@ export void add_style(NodeId id, i32 bits) {
     send(&request);
 }
 
+/** Cuts, copies, pastes or selects all in a TextInput or TextArea
+ * (UiOp::TEXT_EDIT), as its Ctrl+X, C, V and A keys do. */
+@safe
+export void text_edit(NodeId id, i32 command) {
+    Request request = ui_request(UiOp::TEXT_EDIT);
+    request.a0 = (i32)id;
+    request.a1 = command;
+    send(&request);
+}
+
 /** Replaces the text of a TextInput or TextArea. */
 @safe
 export void input_set(NodeId id, str s) {
