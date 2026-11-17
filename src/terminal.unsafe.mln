@@ -1,4 +1,4 @@
-package terminal;
+namespace terminal;
 
 // MyAppFramework's UI-specific process integration: start a process on one of
 // this app's Terminals. Generic process control lives in

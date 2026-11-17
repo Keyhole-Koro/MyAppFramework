@@ -1,4 +1,4 @@
-package elements;
+namespace elements;
 
 import runtime from "runtime/runtime.mln";
 import { UiOp } from "@contracts/myapp/ui.contract.mln";

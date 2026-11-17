@@ -32,7 +32,7 @@ reap はシェル（`MyOS/src/shell/app.mln`）の責務。
 ## アプリの書き方
 
 ```mylang
-package counter;
+namespace counter;
 
 import app from "@app/app.mln";                  // app.run と App
 import { App, View } from "@app/app.mln";

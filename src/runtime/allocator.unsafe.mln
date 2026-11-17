@@ -1,4 +1,4 @@
-package app_allocator;
+namespace app_allocator;
 
 import allocator from "@std/memory/allocator.mln";
 import { sys_sbrk } from "@std/platform/myos/syscall.masm";

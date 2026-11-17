@@ -1,4 +1,4 @@
-package app_transport;
+namespace app_transport;
 
 // The application's end of the request/event transport declared in
 // contracts/myapp/message.contract.mln. request() queues the message and blocks until the

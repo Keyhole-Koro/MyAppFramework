@@ -1,4 +1,4 @@
-package ui;
+namespace ui;
 
 import runtime from "runtime/runtime.mln";
 import str from "@std/text/str.mln";

@@ -1,4 +1,4 @@
-package annotations;
+namespace annotations;
 
 // The annotations an application is written with -- declarations only.
 //

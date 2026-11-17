@@ -1,4 +1,4 @@
-package runtime;
+namespace runtime;
 
 // The application side of the framework: what runs inside an app process to
 // turn its annotations and markup handlers into behaviour. The OS never calls

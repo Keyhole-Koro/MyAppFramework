@@ -1,4 +1,4 @@
-package app;
+namespace app;
 
 // The application model (docs/design/app-model.md). An app is a type that
 // implements App, and its program is one line:
