@@ -252,3 +252,17 @@ void a_text_area_takes_its_field_and_its_first_text() {
     expect_request(2, UiOp::AREA_APPEND, (i32)area, "text");
     assert.assert_true(g_last.s0_len == 2, "text is added to the area");
 }
+
+/*@Test "a part outside the table names no node" { step: 5000000; }*/
+void a_part_outside_the_table_names_no_node() {
+    runtime.attach(16, NodeId(77));
+    runtime.attach(-1, NodeId(78));
+    runtime.attach(1000, NodeId(79));
+    assert.assert_true((i32)runtime.part_node(16) == 0, "a part past the table names no node");
+    assert.assert_true((i32)runtime.part_node(-1) == 0, "a negative part names no node");
+    assert.assert_true((i32)runtime.part_node(1000) == 0, "a part far past the table names no node");
+    TextField field = ui.field();
+    assert.assert_true((i32)field == 1, "the parts that follow are not disturbed");
+    runtime.attach((i32)field, NodeId(5));
+    assert.assert_true((i32)runtime.part_node((i32)field) == 5, "a part in the table still names its node");
+}
