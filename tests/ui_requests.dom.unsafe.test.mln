@@ -10,7 +10,7 @@ import { Step } from "@app/runtime/runtime.mln";
 import terminal from "@app/terminal.mln";
 import myos_service from "@std/platform/myos/service.mln";
 import { UiOp } from "@contracts/myapp/ui.contract.mln";
-import { AppOp } from "@contracts/myapp/lifecycle.contract.mln";
+import { AppOp, AppError } from "@contracts/myapp/lifecycle.contract.mln";
 import { Request, RequestDomain, Event, EventKind } from "@contracts/myapp/message.contract.mln";
 import { NodeId, UiError } from "@contracts/ui/widget.contract.mln";
 import { OsService } from "@contracts/myos/services.contract.mln";
@@ -532,4 +532,83 @@ void the_heap_joins_a_freed_block_to_its_neighbours() {
     give_block(0, 16);
     assert.assert_true(g_pool[0] == 64, "and to the one before it");
     assert.assert_true(allocated(64) == pool_at(0) + 8, "the joined block is given out whole");
+}
+
+// Bound text: `{"clicks: %d", c.clicks}` lowers to these calls.
+
+/*@Test "bound text fills in its values" { step: 5000000; }*/
+void bound_text_fills_in_its_values() {
+    str left = elements.format("clicks: %d of %s, 100%% done");
+    left = elements.format_int(left, -42);
+    left = elements.format_str(left, "ten");
+    str text = elements.format_end(left);
+    assert.assert_str_eq(text, "clicks: -42 of ten, 100% done", "values and %% are filled in");
+    left = elements.format("%s");
+    left = elements.format_str(left, "only");
+    text = elements.format_end(left);
+    assert.assert_str_eq(text, "only", "a new format starts over");
+    left = elements.format("no values");
+    text = elements.format_end(left);
+    assert.assert_str_eq(text, "no values", "a format with no values is its text");
+}
+
+char g_long[300];
+
+/*@Test "bound text stops at its buffer" { step: 20000000; }*/
+void bound_text_stops_at_its_buffer() {
+    i32 i = 0;
+    while (i < 300) {
+        g_long[i] = 'x';
+        i++;
+    }
+    str long_text = str { data: &g_long[0], length: 300 };
+    str left = elements.format(long_text);
+    str text = elements.format_end(left);
+    assert.assert_true(text.length == 255, "a long literal is cut at the buffer");
+    left = elements.format("a%sb");
+    left = elements.format_str(left, long_text);
+    text = elements.format_end(left);
+    assert.assert_str_eq(text, "ab", "a value that does not fit is left out");
+}
+
+// OPEN's answer, written as the shell would.
+bool g_open_delivered = true;
+
+i32 open_request(borrow Request request) {
+    Result<Option<NodeId>, AppError> *answer = (Result<Option<NodeId>, AppError> *)request.result_out;
+    if (g_open_delivered) { *answer = Ok(Some(NodeId(3))); }
+    else { *answer = Err(AppError::NotFound); }
+    return recording_request(&request);
+}
+
+bool not_found(Result<_, AppError> opened) {
+    AppError error = case opened of {
+        Ok(_) -> ({ return false; });
+        Err(value) -> value;
+    };
+    return case error of {
+        AppError::NotFound -> true;
+        _ -> false;
+    };
+}
+
+/*@Test "open hands a path to the shell" { step: 5000000; }*/
+void open_hands_a_path_to_the_shell() {
+    mock.of(app_transport.request).when(mock.any()).call(open_request);
+    g_requests = 0;
+    g_open_delivered = true;
+    assert.assert_true(ui.open("/docs/a.txt").is_ok(), "a delivered open is Ok");
+    assert.assert_true(g_requests == 1, "one request");
+    assert.assert_true(g_last.domain == RequestDomain::APP && g_last.op == AppOp::OPEN, "the shell opens it");
+    assert.assert_true(g_last.s0_len == 11, "the path travels with its length");
+    assert.assert_true(g_last.result_out != 0, "open asks for an answer");
+    g_open_delivered = false;
+    Result<_, AppError> opened = ui.open("/docs/a.zzz");
+    assert.assert_true(not_found(opened), "the shell's error reaches the app");
+}
+
+/*@Test "an open the shell never answered is an error" { step: 5000000; }*/
+void an_open_the_shell_never_answered_is_an_error() {
+    mock.of(app_transport.request).when(mock.any()).call(recording_request);
+    assert.assert_true(ui.open("/docs/a.txt").is_err(), "no answer is not a delivery");
 }
