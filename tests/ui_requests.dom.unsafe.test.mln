@@ -6,11 +6,12 @@ import elements from "@app/elements.mln";
 import app_transport from "@app/runtime/transport.mln";
 import app_allocator from "@app/runtime/allocator.mln";
 import runtime from "@app/runtime/runtime.mln";
+import { Step } from "@app/runtime/runtime.mln";
 import terminal from "@app/terminal.mln";
 import myos_service from "@std/platform/myos/service.mln";
 import { UiOp } from "@contracts/myapp/ui.contract.mln";
 import { AppOp } from "@contracts/myapp/lifecycle.contract.mln";
-import { Request, RequestDomain } from "@contracts/myapp/message.contract.mln";
+import { Request, RequestDomain, Event, EventKind } from "@contracts/myapp/message.contract.mln";
 import { NodeId, UiError } from "@contracts/ui/widget.contract.mln";
 import { OsService } from "@contracts/myos/services.contract.mln";
 import { ProcBindArgs, ProcSpawnArgs } from "@contracts/myos/process-args.contract.mln";
@@ -281,4 +282,189 @@ void a_spawn_the_os_never_took_is_an_error() {
     Result<Pid, SpawnError> spawned = terminal.spawn_bound("hello", screen);
     assert.assert_true(g_service == OsService::PROC_SPAWN, "spawn_bound names the service");
     assert.assert_true(spawned.is_err(), "a spawn with no answer is an error");
+}
+
+// Events come from here: queue() puts one in, and the faked poll hands it
+// out once.
+Event g_event;
+bool g_pending = false;
+
+bool queued_poll(Event *out) {
+    if (!g_pending) { return false; }
+    *out = g_event;
+    g_pending = false;
+    return true;
+}
+
+void queue(EventKind kind, i32 id, i32 arg, i32 token) {
+    g_event = Event {};
+    g_event.kind = kind;
+    g_event.id = id;
+    g_event.arg = arg;
+    g_event.token = token;
+    g_pending = true;
+}
+
+// What the handlers below were called with.
+i32 g_calls = 0;
+i32 g_owner = 0;
+i32 g_value = 0;
+i32 g_second = 0;
+bool g_flag = false;
+i32 g_text_length = 0;
+char g_text[16];
+
+void count_call(i32 owner) {
+    g_calls = g_calls + 1;
+    g_owner = owner;
+}
+
+void flag_call(i32 owner, bool on) {
+    count_call(owner);
+    g_flag = on;
+}
+
+void row_call(i32 owner, i32 row) {
+    count_call(owner);
+    g_value = row;
+}
+
+void caret_call(i32 owner, i32 line, i32 column) {
+    count_call(owner);
+    g_value = line;
+    g_second = column;
+}
+
+void text_call(i32 owner, str text) {
+    count_call(owner);
+    g_text_length = text.length;
+    i32 i = 0;
+    while (i < text.length && i < 16) {
+        g_text[i] = text.data[i];
+        i++;
+    }
+}
+
+// A TEXT_COPY answer: the node's text is "typed".
+i32 text_request(borrow Request request) {
+    char *into = (char *)request.a1;
+    str typed = "typed";
+    i32 i = 0;
+    while (i < typed.length) {
+        into[i] = typed.data[i];
+        i++;
+    }
+    Result<i32, UiError> *answer = (Result<i32, UiError> *)request.result_out;
+    *answer = Ok(typed.length);
+    return recording_request(&request);
+}
+
+/*@Test "no event is idle" { step: 5000000; }*/
+void no_event_is_idle() {
+    mock.of(app_transport.poll).when(mock.any()).call(queued_poll);
+    g_pending = false;
+    assert.assert_true(runtime.next() == Step::Idle, "an empty queue is idle");
+}
+
+/*@Test "a click runs its handler on the instance" { step: 5000000; }*/
+void a_click_runs_its_handler_on_the_instance() {
+    mock.of(app_transport.poll).when(mock.any()).call(queued_poll);
+    runtime.adopt(42);
+    runtime.on_event(5, EventKind::CLICK, count_call);
+    queue(EventKind::CLICK, 5, 0, 0);
+    assert.assert_true(runtime.next() == Step::Handled, "a click is handled");
+    assert.assert_true(g_calls == 1 && g_owner == 42, "its handler runs on the adopted instance");
+    queue(EventKind::CLICK, 6, 0, 0);
+    assert.assert_true(runtime.next() == Step::Handled, "a click with no handler is handled");
+    queue(EventKind::CHANGE, 5, 0, 0);
+    runtime.next();
+    assert.assert_true(g_calls == 1, "a handler runs only for its node and kind");
+    assert.assert_true(runtime.next() == Step::Idle, "an event is taken once");
+}
+
+/*@Test "a handler gets what its event carries" { step: 5000000; }*/
+void a_handler_gets_what_its_event_carries() {
+    mock.of(app_transport.poll).when(mock.any()).call(queued_poll);
+    runtime.adopt(7);
+    runtime.on_flag(6, EventKind::CHANGE, flag_call);
+    runtime.on_row(7, EventKind::ACTIVATE, row_call);
+    runtime.on_caret(8, caret_call);
+    queue(EventKind::CHANGE, 6, 1, 0);
+    runtime.next();
+    assert.assert_true(g_calls == 1 && g_owner == 7 && g_flag, "a flag turned on");
+    queue(EventKind::CHANGE, 6, 0, 0);
+    runtime.next();
+    assert.assert_true(g_calls == 2 && !g_flag, "a flag turned off");
+    queue(EventKind::ACTIVATE, 7, 3, 0);
+    runtime.next();
+    assert.assert_true(g_calls == 3 && g_value == 3, "a row");
+    queue(EventKind::CARET, 8, (4 << 16) | 9, 0);
+    runtime.next();
+    assert.assert_true(g_calls == 4 && g_value == 4 && g_second == 9, "a caret is its line and column");
+}
+
+/*@Test "a changed text is read from its node" { step: 5000000; }*/
+void a_changed_text_is_read_from_its_node() {
+    mock.of(app_transport.poll).when(mock.any()).call(queued_poll);
+    mock.of(app_transport.request).when(mock.any()).call(text_request);
+    mock.of(app_allocator.alloc).when(mock.any()).call(test_alloc);
+    g_requests = 0;
+    runtime.on_text(9, EventKind::CHANGE, text_call);
+    queue(EventKind::CHANGE, 9, 0, 0);
+    assert.assert_true(runtime.next() == Step::Handled, "a change is handled");
+    expect_request(1, UiOp::TEXT_COPY, 9, "the text is asked of its node");
+    assert.assert_true(g_calls == 1, "its handler runs");
+    str got = str { data: &g_text[0], length: g_text_length };
+    assert.assert_str_eq(got, "typed", "the handler gets the node's text");
+}
+
+/*@Test "a key is found by its token" { step: 5000000; }*/
+void a_key_is_found_by_its_token() {
+    mock.of(app_transport.poll).when(mock.any()).call(queued_poll);
+    runtime.on_event(77, EventKind::KEY, count_call);
+    queue(EventKind::KEY, 0, 0, 77);
+    runtime.next();
+    assert.assert_true(g_calls == 1, "a key runs the handler of its token");
+    queue(EventKind::KEY, 77, 0, 1);
+    runtime.next();
+    assert.assert_true(g_calls == 1, "a key's node does not name its handler");
+}
+
+/*@Test "closing the main window closes the app" { step: 5000000; }*/
+void closing_the_main_window_closes_the_app() {
+    mock.of(app_transport.poll).when(mock.any()).call(queued_poll);
+    mock.of(app_transport.request).when(mock.any()).call(recording_request);
+    g_requests = 0;
+    runtime.show_main(NodeId(20));
+    assert.assert_true(g_requests == 1 && g_last.op == AppOp::MAIN_WINDOW && g_last.a0 == 20, "the shell is handed the window");
+    runtime.on_event(20, EventKind::CLOSE, count_call);
+    runtime.on_event(21, EventKind::CLOSE, count_call);
+    queue(EventKind::CLOSE, 20, 0, 0);
+    assert.assert_true(runtime.next() == Step::Close, "the main window closes the app");
+    assert.assert_true(g_calls == 0, "app.run closes it, not a handler");
+    queue(EventKind::CLOSE, 21, 0, 0);
+    assert.assert_true(runtime.next() == Step::Handled, "another window's close is handled");
+    assert.assert_true(g_calls == 1, "by its handler");
+}
+
+/*@Test "an open hands over its path" { step: 5000000; }*/
+void an_open_hands_over_its_path() {
+    mock.of(app_transport.poll).when(mock.any()).call(queued_poll);
+    queue(EventKind::OPEN, 0, 0, 0);
+    str path = "/docs/a.txt";
+    i32 i = 0;
+    while (i < path.length) {
+        g_event.text[i] = path.data[i];
+        i++;
+    }
+    g_event.text[i] = 0;
+    assert.assert_true(runtime.next() == Step::Open, "an open is the app's to do");
+    str opened = runtime.opened_path();
+    assert.assert_str_eq(opened, "/docs/a.txt", "the path is kept");
+    queue(EventKind::OPEN, 0, 0, 0);
+    g_event.text[0] = 'b';
+    g_event.text[1] = 0;
+    runtime.next();
+    opened = runtime.opened_path();
+    assert.assert_str_eq(opened, "b", "the next open replaces it");
 }
