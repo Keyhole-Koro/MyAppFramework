@@ -468,3 +468,68 @@ void an_open_hands_over_its_path() {
     opened = runtime.opened_path();
     assert.assert_str_eq(opened, "b", "the next open replaces it");
 }
+
+// The process heap without sbrk: blocks carved from g_pool are handed to
+// free(), and alloc() is served from the free list they make. A block is a
+// two-word header (size, next free) and its payload.
+i32 g_pool[128];
+
+i32 pool_at(i32 offset) { return (i32)(&g_pool[0]) + offset; }
+
+// Frees a block of `size` payload bytes whose header is at `offset`.
+void give_block(i32 offset, i32 size) {
+    i32 *header = (i32 *)pool_at(offset);
+    *header = size;
+    app_allocator.free(pool_at(offset) + 8);
+}
+
+i32 allocated(i32 size) {
+    return case app_allocator.alloc(size) of {
+        Ok(pointer) -> pointer;
+        Err(_) -> -1;
+    };
+}
+
+bool invalid_size(i32 size) {
+    return case app_allocator.alloc(size) of {
+        Ok(_) -> false;
+        Err(error) -> error == AllocationError::InvalidSize;
+    };
+}
+
+/*@Test "the heap refuses sizes it cannot give" { step: 5000000; }*/
+void the_heap_refuses_sizes_it_cannot_give() {
+    assert.assert_true(invalid_size(0), "zero bytes");
+    assert.assert_true(invalid_size(-4), "a negative size");
+    assert.assert_true(invalid_size(0x7FFFFFFF), "a size that overflows when aligned");
+    app_allocator.free(0);
+}
+
+/*@Test "the heap gives out the first block that fits" { step: 5000000; }*/
+void the_heap_gives_out_the_first_block_that_fits() {
+    give_block(0, 16);
+    give_block(128, 64);
+    assert.assert_true(allocated(32) == pool_at(128) + 8, "a small block is passed over");
+    assert.assert_true(allocated(13) == pool_at(0) + 8, "a size is rounded up to a block that fits");
+}
+
+/*@Test "the heap keeps its free blocks in address order" { step: 5000000; }*/
+void the_heap_keeps_its_free_blocks_in_address_order() {
+    give_block(200, 16);
+    give_block(0, 16);
+    give_block(100, 16);
+    assert.assert_true(allocated(16) == pool_at(0) + 8, "the lowest block first");
+    assert.assert_true(allocated(16) == pool_at(100) + 8, "then the next");
+    assert.assert_true(allocated(16) == pool_at(200) + 8, "then the highest");
+}
+
+/*@Test "the heap joins a freed block to its neighbours" { step: 5000000; }*/
+void the_heap_joins_a_freed_block_to_its_neighbours() {
+    // Three blocks side by side: each header follows the payload before it.
+    give_block(24, 16);
+    give_block(48, 16);
+    assert.assert_true(g_pool[6] == 40, "a block is joined to the one after it");
+    give_block(0, 16);
+    assert.assert_true(g_pool[0] == 64, "and to the one before it");
+    assert.assert_true(allocated(64) == pool_at(0) + 8, "the joined block is given out whole");
+}
