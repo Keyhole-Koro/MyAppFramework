@@ -28,7 +28,9 @@ import { ProcSpawnArgs, ProcBindArgs, ProcUnbindArgs } from "@contracts/myos/pro
  */
 @safe
 export Result<Pid, SpawnError> spawn_bound(str path, Screen screen) {
-    Result<Pid, SpawnError> result;
+    // The OS writes the answer only when it takes the call, so a failed call
+    // leaves this error.
+    Result<Pid, SpawnError> result = Err(SpawnError::NoHandler);
     ProcSpawnArgs<Result<Pid, SpawnError>> args = ProcSpawnArgs<Result<Pid, SpawnError>> {
         path: path.data, path_length: path.length, args: path.data, args_length: 0,
         stdout_node: (i32)runtime.part_node((i32)screen), result_out: &result

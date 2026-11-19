@@ -14,7 +14,7 @@ import { Request, RequestDomain } from "@contracts/myapp/message.contract.mln";
 import { NodeId, UiError } from "@contracts/ui/widget.contract.mln";
 import { OsService } from "@contracts/myos/services.contract.mln";
 import { ProcBindArgs, ProcSpawnArgs } from "@contracts/myos/process-args.contract.mln";
-import { SyscallFailure } from "@contracts/myos/syscall.contract.mln";
+import { SyscallFailure, SyscallStatus } from "@contracts/myos/syscall.contract.mln";
 import { Pid, ProcessControlStatus } from "@contracts/process/control.contract.mln";
 import process from "@std/hosted/process.mln";
 import { SpawnError } from "@contracts/process/spawn.contract.mln";
@@ -66,6 +66,12 @@ Result<i32, SyscallFailure> recording_spawn(i32 service, i32 args) {
     g_service = service;
     g_spawn_node = spawn->stdout_node;
     return Ok(0);
+}
+
+// The OS never took the spawn, so it wrote no answer.
+Result<i32, SyscallFailure> failing_spawn(i32 service, i32 args) {
+    g_service = service;
+    return Err(SyscallFailure { status: SyscallStatus::UnknownService, payload: 0 });
 }
 
 // The heap needs the OS, so what the SDK allocates comes from here.
@@ -265,4 +271,14 @@ void a_part_outside_the_table_names_no_node() {
     assert.assert_true((i32)field == 1, "the parts that follow are not disturbed");
     runtime.attach((i32)field, NodeId(5));
     assert.assert_true((i32)runtime.part_node((i32)field) == 5, "a part in the table still names its node");
+}
+
+/*@Test "a spawn the OS never took is an error" { step: 5000000; }*/
+void a_spawn_the_os_never_took_is_an_error() {
+    mock.of(myos_service.call).when(mock.any(), mock.any()).call(failing_spawn);
+    Screen screen = ui.screen();
+    runtime.attach((i32)screen, NodeId(6));
+    Result<Pid, SpawnError> spawned = terminal.spawn_bound("hello", screen);
+    assert.assert_true(g_service == OsService::PROC_SPAWN, "spawn_bound names the service");
+    assert.assert_true(spawned.is_err(), "a spawn with no answer is an error");
 }
