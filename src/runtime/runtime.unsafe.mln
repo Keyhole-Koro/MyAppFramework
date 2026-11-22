@@ -253,9 +253,7 @@ export void ask_key(borrow Request request, borrow Result<i32, KeyClaimError> re
     ask(&request, (i32)&result, sizeof(Result<i32, KeyClaimError>));
 }
 
-/** Sends a request and receives its Result<_, UiError> answer. */
-@safe
-/** Sends a request and receives its Result<_, AppError> answer. */
+/** Sends an application lifecycle request with one word and one string. No answer is asked for. */
 @safe
 void send_app_value(i32 op, i32 a0, str s0) {
     Request request = app_request(op);
@@ -372,15 +370,22 @@ export i32 new_part() {
     return part_count;
 }
 
-/** Makes a part name a node. */
+// An app can make any number a TextField or Screen, so a part is checked
+// before it indexes the table.
+bool part_in_table(i32 part) { return part > 0 && part < PARTS_MAX; }
+
+/** Makes a part name a node. A number outside the table is ignored. */
 @safe
 export void attach(i32 part, NodeId node) {
-    if (part != 0) { parts[part] = (i32)node; }
+    if (part_in_table(part)) { parts[part] = (i32)node; }
 }
 
-/** The node of a part. */
+/** The node of a part, or NodeId(0) for a number outside the table. */
 @safe
-export NodeId part_node(i32 part) { return NodeId(parts[part]); }
+export NodeId part_node(i32 part) {
+    if (!part_in_table(part)) { return NodeId(0); }
+    return NodeId(parts[part]);
+}
 
 // A read's text. The largest is an Editor's body, and few apps read that much,
 // so it comes from the heap on the first read.
